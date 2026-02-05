@@ -47,10 +47,6 @@
             border: 2px solid #007bff;
             border-radius: 4px;
         }
-        .success {
-            color: green;
-            font-weight: bold;
-        }
     </style>
 </head>
 <body>
@@ -67,79 +63,81 @@
     </div>
 
     <div class="method">
-        <h2>Extract PlayerConfig</h2>
+        <h2>Method 1: Extract from Script Tags</h2>
         <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="extractConfig()">Extract Config</button>
+        <button onclick="method1()">Extract Config</button>
         <pre id="result1">Results will appear here...</pre>
     </div>
 
+    <div class="method">
+        <h2>Method 2: Show All Scripts (Debug)</h2>
+        <input type="text" id="videoId2" placeholder="Enter Vimeo Video ID" value="935884964">
+        <button onclick="method2()">Show All Scripts</button>
+        <pre id="result2">Results will appear here...</pre>
+    </div>
+
     <script>
-        function extractPlayerConfig(scriptContent) {
-            // Find where window.playerConfig starts
-            const startMatch = scriptContent.match(/window\.playerConfig\s*=\s*/);
-            if (!startMatch) return null;
+        function extractConfigFromScripts(html) {
+            // Parse HTML and extract all script tags
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const scripts = doc.querySelectorAll('script');
             
-            const startIndex = startMatch.index + startMatch[0].length;
-            let content = scriptContent.substring(startIndex);
+            console.log(`Found ${scripts.length} script tags`);
             
-            // Find the matching closing brace
-            let braceCount = 0;
-            let inString = false;
-            let stringChar = null;
-            let escaped = false;
-            let endIndex = -1;
-            
-            for (let i = 0; i < content.length; i++) {
-                const char = content[i];
+            for (let script of scripts) {
+                const scriptContent = script.textContent || script.innerText;
                 
-                if (escaped) {
-                    escaped = false;
-                    continue;
-                }
-                
-                if (char === '\\') {
-                    escaped = true;
-                    continue;
-                }
-                
-                if ((char === '"' || char === "'") && !inString) {
-                    inString = true;
-                    stringChar = char;
-                    continue;
-                }
-                
-                if (char === stringChar && inString) {
-                    inString = false;
-                    stringChar = null;
-                    continue;
-                }
-                
-                if (inString) continue;
-                
-                if (char === '{') {
-                    braceCount++;
-                } else if (char === '}') {
-                    braceCount--;
-                    if (braceCount === 0) {
-                        endIndex = i + 1;
-                        break;
+                // Look for window.playerConfig in each script
+                if (scriptContent.includes('window.playerConfig')) {
+                    console.log('Found script with playerConfig!');
+                    
+                    // Try to extract the config object
+                    const match = scriptContent.match(/window\.playerConfig\s*=\s*({[\s\S]*?});/);
+                    if (match) {
+                        try {
+                            const config = JSON.parse(match[1]);
+                            return config;
+                        } catch (e) {
+                            console.error('Failed to parse config:', e);
+                            // Return the raw match for debugging
+                            return { error: 'Parse failed', raw: match[1].substring(0, 500) };
+                        }
                     }
                 }
             }
             
-            if (endIndex === -1) return null;
-            
-            const configStr = content.substring(0, endIndex);
-            
-            try {
-                return JSON.parse(configStr);
-            } catch (e) {
-                console.error('Parse error:', e);
-                return { error: 'Failed to parse', preview: configStr.substring(0, 500) };
-            }
+            return null;
         }
 
-        async function extractConfig() {
+        function getAllScripts(html) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const scripts = doc.querySelectorAll('script');
+            
+            let result = `Found ${scripts.length} script tags:\n\n`;
+            
+            scripts.forEach((script, index) => {
+                const content = script.textContent || script.innerText;
+                const src = script.getAttribute('src');
+                
+                result += `--- Script ${index + 1} ---\n`;
+                if (src) {
+                    result += `Source: ${src}\n`;
+                }
+                result += `Has playerConfig: ${content.includes('playerConfig')}\n`;
+                result += `Length: ${content.length} chars\n`;
+                if (content.includes('playerConfig')) {
+                    result += `Content preview:\n${content.substring(0, 1000)}...\n`;
+                }
+                result += '\n';
+            });
+            
+            return result;
+        }
+
+        // Method 1: Extract config from scripts
+        async function method1() {
             const videoId = document.getElementById('videoId1').value;
             const resultDiv = document.getElementById('result1');
             
@@ -152,31 +150,36 @@
                 const response = await fetch(proxyUrl + targetUrl);
                 const html = await response.text();
                 
-                // Parse HTML and find script with playerConfig
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const scripts = doc.querySelectorAll('script');
-                
-                let config = null;
-                
-                for (let script of scripts) {
-                    const scriptContent = script.textContent || script.innerText;
-                    
-                    if (scriptContent.includes('window.playerConfig')) {
-                        console.log('Found script with playerConfig, extracting...');
-                        config = extractPlayerConfig(scriptContent);
-                        if (config) break;
-                    }
-                }
+                const config = extractConfigFromScripts(html);
                 
                 if (config) {
-                    resultDiv.innerHTML = '<span class="success">✓ Config extracted successfully!</span>\n\n' + 
-                                         JSON.stringify(config, null, 2);
+                    resultDiv.textContent = JSON.stringify(config, null, 2);
                 } else {
-                    resultDiv.textContent = 'Could not extract playerConfig';
+                    resultDiv.textContent = 'Could not find window.playerConfig in any script tag.\n\nTry Method 2 to see all scripts.';
                 }
             } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}\n${error.stack}`;
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Method 2: Show all scripts for debugging
+        async function method2() {
+            const videoId = document.getElementById('videoId2').value;
+            const resultDiv = document.getElementById('result2');
+            
+            try {
+                resultDiv.textContent = 'Fetching...';
+                
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
+                
+                const response = await fetch(proxyUrl + targetUrl);
+                const html = await response.text();
+                
+                const scriptsInfo = getAllScripts(html);
+                resultDiv.textContent = scriptsInfo;
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
             }
         }
     </script>
