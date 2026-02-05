@@ -1,28 +1,39 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vimeo Config Extractor</title>
+    <title>Get Authenticated Vimeo Config</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 900px;
+            max-width: 1000px;
             margin: 50px auto;
             padding: 20px;
         }
-        input, button {
-            padding: 10px;
-            margin: 10px 0;
-            font-size: 16px;
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-weight: bold;
         }
-        input {
-            width: 300px;
+        .authenticated {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .not-authenticated {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
         }
         button {
-            cursor: pointer;
+            padding: 10px 20px;
+            font-size: 16px;
             background: #007bff;
             color: white;
             border: none;
             border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
         }
         button:hover {
             background: #0056b3;
@@ -32,103 +43,135 @@
             padding: 15px;
             border-radius: 4px;
             overflow-x: auto;
-            max-height: 500px;
+            max-height: 600px;
             overflow-y: auto;
+            font-size: 12px;
         }
-        .method {
-            margin: 30px 0;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .iframe-container {
-            margin: 20px 0;
-            padding: 20px;
+        iframe {
             border: 2px solid #007bff;
+            margin: 20px 0;
+        }
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
             border-radius: 4px;
+            margin: 20px 0;
         }
     </style>
 </head>
 <body>
-    <h1>Vimeo Config Extractor</h1>
+    <h1>Vimeo Authenticated Config Extractor</h1>
 
-    <div class="iframe-container">
-        <h2>Testing Vimeo Player Authentication</h2>
-        <iframe id="vimeoPlayer" 
-                src="https://player.vimeo.com/video/935884964?background=1" 
-                width="640" 
-                height="360" 
-                frameborder="0">
-        </iframe>
+    <div class="instructions">
+        <h3>📋 Instructions:</h3>
+        <ol>
+            <li>Click "Open Player in New Tab" below</li>
+            <li>In the new tab, make sure you're logged into Vimeo (check top-right corner)</li>
+            <li>Press <strong>F12</strong> to open DevTools</li>
+            <li>In the Console tab, type: <code>window.playerConfig.user</code></li>
+            <li>If you see <code>{id: ..., logged_in: 1, ...}</code> you're authenticated!</li>
+            <li>Then type: <code>copy(JSON.stringify(window.playerConfig, null, 2))</code></li>
+            <li>Paste the result here ⬇️</li>
+        </ol>
     </div>
 
-    <div class="method">
-        <h2>Method 1: Direct Fetch (Simple)</h2>
-        <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="method1()">Extract Config</button>
-        <pre id="result1">Results will appear here...</pre>
-    </div>
+    <button onclick="openPlayer()">🚀 Open Player in New Tab</button>
+    <button onclick="openVimeoLogin()">🔐 Open Vimeo Login</button>
 
-    <div class="method">
-        <h2>Method 2: CORS Proxy (If Method 1 fails)</h2>
-        <input type="text" id="videoId2" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="method2()">Extract Config</button>
-        <pre id="result2">Results will appear here...</pre>
-    </div>
+    <div id="status"></div>
+
+    <h3>Paste Authenticated Config Here:</h3>
+    <textarea id="configInput" style="width: 100%; height: 200px; font-family: monospace; padding: 10px;" placeholder='Paste the playerConfig JSON here...'></textarea>
+    <br>
+    <button onclick="analyzeConfig()">📊 Analyze Config</button>
+    <button onclick="clearAll()">🗑️ Clear</button>
+
+    <div id="analysis"></div>
+    <pre id="output"></pre>
 
     <script>
-        // Method 1: Direct fetch (will work if CORS allows)
-        async function method1() {
-            const videoId = document.getElementById('videoId1').value;
-            const resultDiv = document.getElementById('result1');
-            
+        function openPlayer() {
+            window.open('https://player.vimeo.com/video/935884964', '_blank');
+        }
+
+        function openVimeoLogin() {
+            window.open('https://vimeo.com/log_in', '_blank');
+        }
+
+        function analyzeConfig() {
+            const input = document.getElementById('configInput').value;
+            const statusDiv = document.getElementById('status');
+            const analysisDiv = document.getElementById('analysis');
+            const outputDiv = document.getElementById('output');
+
+            if (!input.trim()) {
+                alert('Please paste the playerConfig JSON first!');
+                return;
+            }
+
             try {
-                resultDiv.textContent = 'Fetching...';
+                const config = JSON.parse(input);
                 
-                const response = await fetch(`https://player.vimeo.com/video/${videoId}`);
-                const html = await response.text();
+                // Check authentication
+                const isAuthenticated = config.user && config.user.logged_in === 1;
                 
-                // Extract window.playerConfig
-                const match = html.match(/window\.playerConfig\s*=\s*(\{[\s\S]*?\});/);
-                
-                if (match) {
-                    const config = JSON.parse(match[1]);
-                    resultDiv.textContent = JSON.stringify(config, null, 2);
+                if (isAuthenticated) {
+                    statusDiv.className = 'status authenticated';
+                    statusDiv.innerHTML = `
+                        ✅ <strong>AUTHENTICATED</strong><br>
+                        User ID: ${config.user.id}<br>
+                        Account Type: ${config.user.account_type}
+                    `;
+                    
+                    analysisDiv.innerHTML = `
+                        <h3>🎯 Extracted Data:</h3>
+                        <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
+                            <tr><th>Field</th><th>Value</th></tr>
+                            <tr><td>User ID</td><td>${config.user.id}</td></tr>
+                            <tr><td>Account Type</td><td>${config.user.account_type}</td></tr>
+                            <tr><td>Logged In</td><td>${config.user.logged_in}</td></tr>
+                            <tr><td>IP Address</td><td>${config.client?.ip || 'N/A'}</td></tr>
+                            <tr><td>Country</td><td>${config.country || 'N/A'}</td></tr>
+                            <tr><td>Session ID</td><td>${config.request?.session || 'N/A'}</td></tr>
+                            <tr><td>Referrer</td><td>${config.request?.referrer || 'N/A'}</td></tr>
+                            <tr><td>ATID</td><td>${config.request?.atid || 'N/A'}</td></tr>
+                            <tr><td>Timestamp</td><td>${new Date((config.request?.timestamp || 0) * 1000).toISOString()}</td></tr>
+                        </table>
+                    `;
                 } else {
-                    resultDiv.textContent = 'Could not find playerConfig in response';
+                    statusDiv.className = 'status not-authenticated';
+                    statusDiv.innerHTML = `
+                        ❌ <strong>NOT AUTHENTICATED</strong><br>
+                        This config is from an anonymous session.
+                    `;
+                    
+                    analysisDiv.innerHTML = `
+                        <h3>🎯 Extracted Data (Anonymous):</h3>
+                        <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
+                            <tr><th>Field</th><th>Value</th></tr>
+                            <tr><td>IP Address</td><td>${config.client?.ip || 'N/A'}</td></tr>
+                            <tr><td>Country</td><td>${config.country || 'N/A'}</td></tr>
+                            <tr><td>Session ID</td><td>${config.request?.session || 'N/A'}</td></tr>
+                            <tr><td>Referrer</td><td>${config.request?.referrer || 'N/A'}</td></tr>
+                            <tr><td>ATID</td><td>${config.request?.atid || 'N/A'}</td></tr>
+                            <tr><td>Timestamp</td><td>${new Date((config.request?.timestamp || 0) * 1000).toISOString()}</td></tr>
+                        </table>
+                    `;
                 }
+
+                outputDiv.textContent = JSON.stringify(config, null, 2);
+                
             } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}\n\nThis method requires CORS to be enabled. Try Method 2 or use a server-side solution.`;
+                alert('Invalid JSON! Error: ' + error.message);
             }
         }
 
-        // Method 2: Using CORS proxy
-        async function method2() {
-            const videoId = document.getElementById('videoId2').value;
-            const resultDiv = document.getElementById('result2');
-            
-            try {
-            resultDiv.textContent = 'Fetching via proxy...';
-                
-                // Using a CORS proxy service
-                const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
-                
-                const response = await fetch(proxyUrl + targetUrl);
-                const html = await response.text();
-                
-                // Extract window.playerConfig
-                const match = html.match(/window\.playerConfig\s*=\s*(\{[\s\S]*?\});/);
-                
-                if (match) {
-                    const config = JSON.parse(match[1]);
-                    resultDiv.textContent = JSON.stringify(config, null, 2);
-                } else {
-                    resultDiv.textContent = 'Could not find playerConfig in response';
-                }
-            } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}`;
-            }
+        function clearAll() {
+            document.getElementById('configInput').value = '';
+            document.getElementById('status').innerHTML = '';
+            document.getElementById('analysis').innerHTML = '';
+            document.getElementById('output').textContent = '';
         }
     </script>
 </body>
