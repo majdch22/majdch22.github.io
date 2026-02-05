@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Get Authenticated Vimeo Config</title>
+    <title>Vimeo Authenticated Auto-Extractor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -15,18 +15,11 @@
             border-radius: 4px;
             font-weight: bold;
         }
-        .authenticated {
-            background: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
-        .not-authenticated {
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
         button {
-            padding: 10px 20px;
+            padding: 12px 24px;
             font-size: 16px;
             background: #007bff;
             color: white;
@@ -35,144 +28,173 @@
             cursor: pointer;
             margin: 10px 5px;
         }
-        button:hover {
-            background: #0056b3;
-        }
+        button:hover { background: #0056b3; }
         pre {
             background: #f4f4f4;
             padding: 15px;
             border-radius: 4px;
             overflow-x: auto;
-            max-height: 600px;
+            max-height: 500px;
             overflow-y: auto;
             font-size: 12px;
         }
-        iframe {
-            border: 2px solid #007bff;
-            margin: 20px 0;
-        }
-        .instructions {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
+        .summary {
+            background: #e7f3ff;
             padding: 15px;
-            border-radius: 4px;
+            border-left: 4px solid #007bff;
             margin: 20px 0;
         }
     </style>
 </head>
 <body>
-    <h1>Vimeo Authenticated Config Extractor</h1>
-
-    <div class="instructions">
-        <h3>📋 Instructions:</h3>
-        <ol>
-            <li>Click "Open Player in New Tab" below</li>
-            <li>In the new tab, make sure you're logged into Vimeo (check top-right corner)</li>
-            <li>Press <strong>F12</strong> to open DevTools</li>
-            <li>In the Console tab, type: <code>window.playerConfig.user</code></li>
-            <li>If you see <code>{id: ..., logged_in: 1, ...}</code> you're authenticated!</li>
-            <li>Then type: <code>copy(JSON.stringify(window.playerConfig, null, 2))</code></li>
-            <li>Paste the result here ⬇️</li>
-        </ol>
+    <h1>🔍 Vimeo Auto-Extractor (Authenticated)</h1>
+    
+    <div class="warning">
+        <strong>⚠️ Important:</strong> Make sure you're logged into Vimeo before clicking "Extract Data"
     </div>
 
-    <button onclick="openPlayer()">🚀 Open Player in New Tab</button>
-    <button onclick="openVimeoLogin()">🔐 Open Vimeo Login</button>
+    <input type="text" id="videoId" placeholder="Video ID" value="935884964" style="width: 200px; padding: 10px; margin: 10px 0;">
+    <br>
+    <button onclick="extractAuthenticated()">🚀 Extract Data (Auto)</button>
+    <button onclick="clearResults()">🗑️ Clear</button>
 
     <div id="status"></div>
-
-    <h3>Paste Authenticated Config Here:</h3>
-    <textarea id="configInput" style="width: 100%; height: 200px; font-family: monospace; padding: 10px;" placeholder='Paste the playerConfig JSON here...'></textarea>
-    <br>
-    <button onclick="analyzeConfig()">📊 Analyze Config</button>
-    <button onclick="clearAll()">🗑️ Clear</button>
-
-    <div id="analysis"></div>
-    <pre id="output"></pre>
+    <div id="summary"></div>
+    <pre id="fullConfig"></pre>
 
     <script>
-        function openPlayer() {
-            window.open('https://player.vimeo.com/video/935884964', '_blank');
-        }
+        let extractWindow = null;
 
-        function openVimeoLogin() {
-            window.open('https://vimeo.com/log_in', '_blank');
-        }
-
-        function analyzeConfig() {
-            const input = document.getElementById('configInput').value;
+        function extractAuthenticated() {
+            const videoId = document.getElementById('videoId').value;
             const statusDiv = document.getElementById('status');
-            const analysisDiv = document.getElementById('analysis');
-            const outputDiv = document.getElementById('output');
+            
+            statusDiv.className = 'status warning';
+            statusDiv.innerHTML = '⏳ Opening player window... Please wait 3 seconds...';
 
-            if (!input.trim()) {
-                alert('Please paste the playerConfig JSON first!');
-                return;
-            }
+            // Open player in new window
+            extractWindow = window.open(
+                `https://player.vimeo.com/video/${videoId}`,
+                'vimeoExtractor',
+                'width=800,height=600'
+            );
 
-            try {
-                const config = JSON.parse(input);
-                
-                // Check authentication
-                const isAuthenticated = config.user && config.user.logged_in === 1;
-                
-                if (isAuthenticated) {
-                    statusDiv.className = 'status authenticated';
-                    statusDiv.innerHTML = `
-                        ✅ <strong>AUTHENTICATED</strong><br>
-                        User ID: ${config.user.id}<br>
-                        Account Type: ${config.user.account_type}
-                    `;
+            // Wait for window to load, then extract
+            setTimeout(() => {
+                try {
+                    // Try to access playerConfig from the opened window
+                    const config = extractWindow.window.playerConfig;
                     
-                    analysisDiv.innerHTML = `
-                        <h3>🎯 Extracted Data:</h3>
-                        <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
-                            <tr><th>Field</th><th>Value</th></tr>
-                            <tr><td>User ID</td><td>${config.user.id}</td></tr>
-                            <tr><td>Account Type</td><td>${config.user.account_type}</td></tr>
-                            <tr><td>Logged In</td><td>${config.user.logged_in}</td></tr>
-                            <tr><td>IP Address</td><td>${config.client?.ip || 'N/A'}</td></tr>
-                            <tr><td>Country</td><td>${config.country || 'N/A'}</td></tr>
-                            <tr><td>Session ID</td><td>${config.request?.session || 'N/A'}</td></tr>
-                            <tr><td>Referrer</td><td>${config.request?.referrer || 'N/A'}</td></tr>
-                            <tr><td>ATID</td><td>${config.request?.atid || 'N/A'}</td></tr>
-                            <tr><td>Timestamp</td><td>${new Date((config.request?.timestamp || 0) * 1000).toISOString()}</td></tr>
-                        </table>
-                    `;
-                } else {
-                    statusDiv.className = 'status not-authenticated';
-                    statusDiv.innerHTML = `
-                        ❌ <strong>NOT AUTHENTICATED</strong><br>
-                        This config is from an anonymous session.
-                    `;
+                    if (!config) {
+                        statusDiv.className = 'status error';
+                        statusDiv.innerHTML = '❌ Could not access playerConfig. Browser security blocked access.';
+                        extractWindow.close();
+                        return;
+                    }
+
+                    // Close the window
+                    extractWindow.close();
+
+                    // Check if authenticated
+                    const isAuth = config.user && config.user.logged_in === 1;
                     
-                    analysisDiv.innerHTML = `
-                        <h3>🎯 Extracted Data (Anonymous):</h3>
-                        <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
-                            <tr><th>Field</th><th>Value</th></tr>
-                            <tr><td>IP Address</td><td>${config.client?.ip || 'N/A'}</td></tr>
-                            <tr><td>Country</td><td>${config.country || 'N/A'}</td></tr>
-                            <tr><td>Session ID</td><td>${config.request?.session || 'N/A'}</td></tr>
-                            <tr><td>Referrer</td><td>${config.request?.referrer || 'N/A'}</td></tr>
-                            <tr><td>ATID</td><td>${config.request?.atid || 'N/A'}</td></tr>
-                            <tr><td>Timestamp</td><td>${new Date((config.request?.timestamp || 0) * 1000).toISOString()}</td></tr>
-                        </table>
-                    `;
+                    if (isAuth) {
+                        statusDiv.className = 'status success';
+                        statusDiv.innerHTML = `✅ SUCCESS - Authenticated as User ${config.user.id}`;
+                        
+                        displaySummary(config, true);
+                    } else {
+                        statusDiv.className = 'status warning';
+                        statusDiv.innerHTML = '⚠️ Data extracted but NOT authenticated';
+                        
+                        displaySummary(config, false);
+                    }
+
+                    document.getElementById('fullConfig').textContent = JSON.stringify(config, null, 2);
+
+                } catch (error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.innerHTML = `❌ Error: ${error.message}<br><br>
+                        <strong>This happens because browsers block cross-origin access.</strong><br>
+                        Use Method 2 below instead.`;
+                    
+                    if (extractWindow && !extractWindow.closed) {
+                        extractWindow.close();
+                    }
                 }
-
-                outputDiv.textContent = JSON.stringify(config, null, 2);
-                
-            } catch (error) {
-                alert('Invalid JSON! Error: ' + error.message);
-            }
+            }, 3000);
         }
 
-        function clearAll() {
-            document.getElementById('configInput').value = '';
+        function displaySummary(config, isAuth) {
+            const summaryDiv = document.getElementById('summary');
+            
+            let html = '<div class="summary"><h3>📊 Extracted Data:</h3><table border="1" cellpadding="8" style="width:100%; border-collapse: collapse;">';
+            
+            if (isAuth) {
+                html += `
+                    <tr><td><strong>User ID</strong></td><td>${config.user.id}</td></tr>
+                    <tr><td><strong>Account Type</strong></td><td>${config.user.account_type}</td></tr>
+                    <tr><td><strong>Logged In</strong></td><td>Yes (${config.user.logged_in})</td></tr>
+                `;
+            }
+            
+            html += `
+                <tr><td><strong>IP Address</strong></td><td>${config.client?.ip || 'N/A'}</td></tr>
+                <tr><td><strong>Country</strong></td><td>${config.country || 'N/A'}</td></tr>
+                <tr><td><strong>Session ID</strong></td><td>${config.request?.session || 'N/A'}</td></tr>
+                <tr><td><strong>Referrer</strong></td><td>${config.request?.referrer || 'Direct'}</td></tr>
+                <tr><td><strong>Timestamp</strong></td><td>${new Date((config.request?.timestamp || 0) * 1000).toLocaleString()}</td></tr>
+                <tr><td><strong>Video Owner</strong></td><td>${config.video?.owner?.name || 'N/A'} (ID: ${config.video?.owner?.id || 'N/A'})</td></tr>
+                <tr><td><strong>Privacy Hash</strong></td><td>${config.video?.embed_code?.match(/h=([a-z0-9]+)/)?.[1] || 'N/A'}</td></tr>
+            `;
+            
+            html += '</table></div>';
+            summaryDiv.innerHTML = html;
+        }
+
+        function clearResults() {
             document.getElementById('status').innerHTML = '';
-            document.getElementById('analysis').innerHTML = '';
-            document.getElementById('output').textContent = '';
+            document.getElementById('summary').innerHTML = '';
+            document.getElementById('fullConfig').textContent = '';
         }
     </script>
+
+    <hr style="margin: 40px 0;">
+
+    <h2>📌 Method 2: Bookmarklet (Recommended)</h2>
+    <p>If the auto-extract doesn't work due to browser security, use this bookmarklet instead:</p>
+    
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+        <p><strong>Step 1:</strong> Drag this button to your bookmarks bar:</p>
+        <a href="javascript:(function(){var c=window.playerConfig;if(!c){alert('Not on a Vimeo player page!');return;}var w=window.open('','_blank','width=900,height=700');var isAuth=c.user&&c.user.logged_in===1;var html='<html><head><title>Vimeo Config</title><style>body{font-family:Arial;padding:20px;}table{border-collapse:collapse;width:100%;margin:20px 0;}td{border:1px solid #ddd;padding:8px;}pre{background:#f4f4f4;padding:15px;overflow:auto;}</style></head><body>';html+='<h2>'+(isAuth?'✅ Authenticated':'❌ Not Authenticated')+'</h2>';html+='<table>';if(isAuth){html+='<tr><td><b>User ID</b></td><td>'+c.user.id+'</td></tr>';}html+='<tr><td><b>IP</b></td><td>'+(c.client?.ip||'N/A')+'</td></tr>';html+='<tr><td><b>Country</b></td><td>'+(c.country||'N/A')+'</td></tr>';html+='<tr><td><b>Session</b></td><td>'+(c.request?.session||'N/A')+'</td></tr>';html+='</table><h3>Full Config:</h3><pre>'+JSON.stringify(c,null,2)+'</pre></body></html>';w.document.write(html);w.document.close();})();" style="display: inline-block; padding: 15px 30px; background: #28a745; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">📥 Vimeo Extractor</a>
+        
+        <p><strong>Step 2:</strong> Go to <code>https://player.vimeo.com/video/935884964</code></p>
+        <p><strong>Step 3:</strong> Click the bookmarklet</p>
+    </div>
+
+    <hr style="margin: 40px 0;">
+
+    <h2>📌 Method 3: Browser Extension Script</h2>
+    <p>Run this in DevTools Console when on the player page:</p>
+    <pre style="background: #2d2d2d; color: #f8f8f8; padding: 15px;">// Copy this entire script
+var config = window.playerConfig;
+var result = {
+    authenticated: !!(config.user && config.user.logged_in === 1),
+    user_id: config.user?.id || null,
+    account_type: config.user?.account_type || null,
+    ip_address: config.client?.ip || null,
+    country: config.country || null,
+    session: config.request?.session || null,
+    referrer: config.request?.referrer || null,
+    video_owner: config.video?.owner?.name || null,
+    video_owner_id: config.video?.owner?.id || null,
+    full_config: config
+};
+
+console.log('=== EXTRACTION RESULT ===');
+console.table(result);
+copy(JSON.stringify(result, null, 2));
+console.log('✅ Full result copied to clipboard!');</pre>
+
 </body>
 </html>
