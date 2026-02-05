@@ -1,184 +1,272 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vimeo Config Extractor</title>
+    <title>Vimeo Iframe Authentication Test</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 50px auto;
+            max-width: 1200px;
+            margin: 20px auto;
             padding: 20px;
         }
-        input, button {
-            padding: 10px;
-            margin: 10px 0;
-            font-size: 16px;
+        h1 {
+            color: #333;
         }
-        input {
-            width: 300px;
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        iframe {
+            border: 2px solid #00adef;
+            margin: 20px 0;
         }
         button {
-            cursor: pointer;
-            background: #007bff;
+            background-color: #00adef;
             color: white;
+            padding: 10px 20px;
             border: none;
-            border-radius: 4px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
         }
         button:hover {
-            background: #0056b3;
+            background-color: #0088cc;
         }
-        pre {
-            background: #f4f4f4;
+        .results {
+            background-color: #f5f5f5;
             padding: 15px;
-            border-radius: 4px;
-            overflow-x: auto;
-            max-height: 500px;
+            border-radius: 5px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 400px;
             overflow-y: auto;
         }
-        .method {
-            margin: 30px 0;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .iframe-container {
-            margin: 20px 0;
-            padding: 20px;
-            border: 2px solid #007bff;
-            border-radius: 4px;
-        }
         .success {
-            color: green;
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ffc107;
             font-weight: bold;
         }
     </style>
 </head>
 <body>
-    <h1>Vimeo Config Extractor</h1>
+    <h1>Vimeo Iframe Authentication Test</h1>
+    <p>Testing cross-origin iframe data exposure for bug bounty research</p>
 
-    <div class="iframe-container">
-        <h2>Testing Vimeo Player Authentication</h2>
+    <div class="test-section">
+        <h2>Test Video Iframe</h2>
         <iframe id="vimeoPlayer" 
                 src="https://player.vimeo.com/video/935884964?background=1" 
                 width="640" 
                 height="360" 
-                frameborder="0">
+                frameborder="0"
+                allow="autoplay; fullscreen; picture-in-picture">
         </iframe>
     </div>
 
-    <div class="method">
-        <h2>Extract PlayerConfig</h2>
-        <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="extractConfig()">Extract Config</button>
-        <pre id="result1">Results will appear here...</pre>
+    <div class="test-section">
+        <h2>Test 1: Access iframe's window.playerConfig</h2>
+        <button onclick="testPlayerConfigAccess()">Test Direct Access</button>
+        <div id="result1" class="results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Check iframe cookies</h2>
+        <button onclick="testCookieAccess()">Check Cookies Sent</button>
+        <div id="result2" class="results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Extract tokens via postMessage listening</h2>
+        <button onclick="testPostMessage()">Listen for Messages</button>
+        <button onclick="stopListening()">Stop Listening</button>
+        <div id="result3" class="results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Check network requests</h2>
+        <button onclick="showNetworkInstructions()">Show Instructions</button>
+        <div id="result4" class="results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 5: Try accessing via Chrome DevTools</h2>
+        <button onclick="showDevToolsInstructions()">Show Instructions</button>
+        <div id="result5" class="results"></div>
     </div>
 
     <script>
-        function extractPlayerConfig(scriptContent) {
-            // Find where window.playerConfig starts
-            const startMatch = scriptContent.match(/window\.playerConfig\s*=\s*/);
-            if (!startMatch) return null;
-            
-            const startIndex = startMatch.index + startMatch[0].length;
-            let content = scriptContent.substring(startIndex);
-            
-            // Find the matching closing brace
-            let braceCount = 0;
-            let inString = false;
-            let stringChar = null;
-            let escaped = false;
-            let endIndex = -1;
-            
-            for (let i = 0; i < content.length; i++) {
-                const char = content[i];
-                
-                if (escaped) {
-                    escaped = false;
-                    continue;
-                }
-                
-                if (char === '\\') {
-                    escaped = true;
-                    continue;
-                }
-                
-                if ((char === '"' || char === "'") && !inString) {
-                    inString = true;
-                    stringChar = char;
-                    continue;
-                }
-                
-                if (char === stringChar && inString) {
-                    inString = false;
-                    stringChar = null;
-                    continue;
-                }
-                
-                if (inString) continue;
-                
-                if (char === '{') {
-                    braceCount++;
-                } else if (char === '}') {
-                    braceCount--;
-                    if (braceCount === 0) {
-                        endIndex = i + 1;
-                        break;
-                    }
-                }
-            }
-            
-            if (endIndex === -1) return null;
-            
-            const configStr = content.substring(0, endIndex);
+        let messageListener = null;
+
+        // Test 1: Try to access playerConfig directly
+        function testPlayerConfigAccess() {
+            const resultDiv = document.getElementById('result1');
+            const iframe = document.getElementById('vimeoPlayer');
             
             try {
-                return JSON.parse(configStr);
+                // Try to access iframe's content window
+                const iframeWindow = iframe.contentWindow;
+                resultDiv.innerHTML = '<span class="warning">Attempting to access iframe.contentWindow...</span>\n';
+                
+                // Try to access playerConfig
+                const config = iframeWindow.playerConfig;
+                
+                if (config) {
+                    resultDiv.innerHTML += '<span class="success">✓ SUCCESS: Can access playerConfig!</span>\n\n';
+                    resultDiv.innerHTML += 'Full config:\n' + JSON.stringify(config, null, 2);
+                    
+                    // Extract sensitive data
+                    if (config.user && config.user.logged_in) {
+                        resultDiv.innerHTML += '\n\n<span class="error">⚠ SECURITY ISSUE FOUND:</span>\n';
+                        resultDiv.innerHTML += 'User ID: ' + config.user.id + '\n';
+                        resultDiv.innerHTML += 'API Token: ' + (config.user.vimeo_api_client_token || 'N/A') + '\n';
+                        if (config.user.vimeo_api_interaction_tokens) {
+                            resultDiv.innerHTML += 'Interaction Tokens:\n' + JSON.stringify(config.user.vimeo_api_interaction_tokens, null, 2);
+                        }
+                    }
+                } else {
+                    resultDiv.innerHTML += '<span class="warning">playerConfig is undefined</span>';
+                }
             } catch (e) {
-                console.error('Parse error:', e);
-                return { error: 'Failed to parse', preview: configStr.substring(0, 500) };
+                resultDiv.innerHTML = '<span class="error">✗ BLOCKED by same-origin policy (expected)</span>\n\n';
+                resultDiv.innerHTML += 'Error: ' + e.message + '\n\n';
+                resultDiv.innerHTML += 'This is normal security behavior - cross-origin iframes should be blocked.';
             }
         }
 
-        async function extractConfig() {
-            const videoId = document.getElementById('videoId1').value;
-            const resultDiv = document.getElementById('result1');
+        // Test 2: Check cookies
+        function testCookieAccess() {
+            const resultDiv = document.getElementById('result2');
+            resultDiv.innerHTML = '<span class="warning">Checking cookies...</span>\n\n';
             
-            try {
-                resultDiv.textContent = 'Fetching...';
-                
-                const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
-                
-                const response = await fetch(proxyUrl + targetUrl);
-                const html = await response.text();
-                
-                // Parse HTML and find script with playerConfig
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const scripts = doc.querySelectorAll('script');
-                
-                let config = null;
-                
-                for (let script of scripts) {
-                    const scriptContent = script.textContent || script.innerText;
-                    
-                    if (scriptContent.includes('window.playerConfig')) {
-                        console.log('Found script with playerConfig, extracting...');
-                        config = extractPlayerConfig(scriptContent);
-                        if (config) break;
-                    }
-                }
-                
-                if (config) {
-                    resultDiv.innerHTML = '<span class="success">✓ Config extracted successfully!</span>\n\n' + 
-                                         JSON.stringify(config, null, 2);
-                } else {
-                    resultDiv.textContent = 'Could not extract playerConfig';
-                }
-            } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}\n${error.stack}`;
+            // Show this page's cookies
+            resultDiv.innerHTML += 'Cookies accessible to this page:\n';
+            resultDiv.innerHTML += document.cookie || '(no cookies)';
+            resultDiv.innerHTML += '\n\n';
+            
+            // Check if we can see Vimeo cookies
+            if (document.cookie.includes('vimeo')) {
+                resultDiv.innerHTML += '<span class="error">⚠ WARNING: Vimeo cookies are accessible!</span>';
+            } else {
+                resultDiv.innerHTML += '<span class="success">✓ Vimeo cookies are NOT accessible (expected)</span>\n\n';
+                resultDiv.innerHTML += 'Note: This doesn\'t mean the iframe isn\'t sending cookies to Vimeo.\n';
+                resultDiv.innerHTML += 'Check the Network tab in DevTools to see what cookies are sent with iframe requests.';
             }
         }
+
+        // Test 3: Listen for postMessage events
+        function testPostMessage() {
+            const resultDiv = document.getElementById('result3');
+            resultDiv.innerHTML = '<span class="success">Listening for postMessage events...</span>\n\n';
+            
+            // Remove existing listener if any
+            if (messageListener) {
+                window.removeEventListener('message', messageListener);
+            }
+            
+            messageListener = function(event) {
+                // Log all messages
+                resultDiv.innerHTML += '--- Message Received ---\n';
+                resultDiv.innerHTML += 'Origin: ' + event.origin + '\n';
+                resultDiv.innerHTML += 'Data: ' + JSON.stringify(event.data, null, 2) + '\n\n';
+                
+                // Check if it contains sensitive data
+                if (event.data && typeof event.data === 'object') {
+                    const dataStr = JSON.stringify(event.data);
+                    if (dataStr.includes('token') || dataStr.includes('user') || dataStr.includes('session')) {
+                        resultDiv.innerHTML += '<span class="error">⚠ Potential sensitive data found!</span>\n\n';
+                    }
+                }
+            };
+            
+            window.addEventListener('message', messageListener);
+            resultDiv.innerHTML += 'Listener active. Interact with the video to trigger events.\n';
+            resultDiv.innerHTML += 'Messages will appear below as they arrive...\n\n';
+        }
+
+        function stopListening() {
+            if (messageListener) {
+                window.removeEventListener('message', messageListener);
+                messageListener = null;
+                const resultDiv = document.getElementById('result3');
+                resultDiv.innerHTML += '\n<span class="warning">Stopped listening.</span>';
+            }
+        }
+
+        // Test 4: Network instructions
+        function showNetworkInstructions() {
+            const resultDiv = document.getElementById('result4');
+            resultDiv.innerHTML = `<span class="warning">Network Analysis Instructions:</span>
+
+1. Open Chrome DevTools (F12)
+2. Go to the Network tab
+3. Reload this page
+4. Look for requests to player.vimeo.com
+5. Click on the request to view details
+6. Check the "Cookies" tab to see what cookies were sent
+7. Look for:
+   - is_logged_in
+   - vuid
+   - Session tokens
+   
+<span class="success">What to look for:</span>
+- Are authentication cookies being sent cross-origin?
+- Compare cookies sent when embedded vs. on vimeo.com directly
+- Check the "Sec-Fetch-Site" header (should be "cross-site")
+
+<span class="error">If auth cookies ARE sent cross-site, this could be a security issue!</span>`;
+        }
+
+        // Test 5: DevTools instructions
+        function showDevToolsInstructions() {
+            const resultDiv = document.getElementById('result5');
+            resultDiv.innerHTML = `<span class="warning">Chrome DevTools Console Test:</span>
+
+1. Open Chrome DevTools (F12)
+2. Go to the Console tab
+3. Paste this command:
+
+   document.querySelector('iframe').contentWindow.playerConfig
+
+4. Press Enter
+
+<span class="success">Expected Results:</span>
+- BLOCKED: You'll get a SecurityError (normal, good security)
+- ACCESSIBLE: You can see the config object (potential vulnerability!)
+
+<span class="warning">Alternative test - inspect iframe context:</span>
+1. In DevTools, click the dropdown that says "top" 
+2. Select the iframe context (will show as player.vimeo.com)
+3. Type: playerConfig
+4. This will show the config in the iframe's own context
+5. Check if sensitive data is exposed
+
+<span class="error">Key Finding:</span>
+If playerConfig contains user tokens/sessions and is accessible from the parent page,
+or if it's exposed without proper protections in the iframe itself, this could be
+an information disclosure vulnerability.`;
+        }
+
+        // Auto-run some tests on load
+        window.addEventListener('load', function() {
+            console.log('Page loaded. Iframe should be loading...');
+            console.log('Run tests using the buttons above.');
+            
+            // Wait for iframe to load, then auto-run Test 1
+            setTimeout(function() {
+                console.log('Attempting automatic test...');
+                testPlayerConfigAccess();
+            }, 3000);
+        });
     </script>
 </body>
 </html>
