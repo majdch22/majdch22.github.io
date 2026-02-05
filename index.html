@@ -47,19 +47,39 @@
             border: 2px solid #007bff;
             border-radius: 4px;
         }
+        .info {
+            background: #fffbcc;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <h1>Vimeo Config Extractor</h1>
 
+    <div class="info">
+        <h3>⚠️ To authenticate the iframe:</h3>
+        <ol>
+            <li>Open <a href="https://vimeo.com" target="_blank">vimeo.com</a> in a new tab</li>
+            <li>Log in to your Vimeo account</li>
+            <li>Come back to this page</li>
+            <li>The iframe below should now be authenticated</li>
+        </ol>
+        <p><strong>Note:</strong> The iframe uses cookies from the same domain (vimeo.com), so being logged in on Vimeo will authenticate the iframe automatically.</p>
+    </div>
+
     <div class="iframe-container">
         <h2>Testing Vimeo Player Authentication</h2>
         <iframe id="vimeoPlayer" 
-                src="https://player.vimeo.com/video/935884964?background=1" 
+                src="https://player.vimeo.com/video/935884964" 
                 width="640" 
                 height="360" 
-                frameborder="0">
+                frameborder="0"
+                allow="autoplay; fullscreen; picture-in-picture"
+                referrerpolicy="strict-origin-when-cross-origin">
         </iframe>
+        <p><small>Video ID: 935884964</small></p>
     </div>
 
     <div class="method">
