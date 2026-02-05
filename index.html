@@ -47,116 +47,37 @@
             border: 2px solid #007bff;
             border-radius: 4px;
         }
-        .info {
-            background: #fffbcc;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
     </style>
 </head>
 <body>
     <h1>Vimeo Config Extractor</h1>
 
-    <div class="info">
-        <h3>⚠️ To authenticate the iframe:</h3>
-        <ol>
-            <li>Open <a href="https://vimeo.com" target="_blank">vimeo.com</a> in a new tab</li>
-            <li>Log in to your Vimeo account</li>
-            <li>Come back to this page</li>
-            <li>The iframe below should now be authenticated</li>
-        </ol>
-        <p><strong>Note:</strong> The iframe uses cookies from the same domain (vimeo.com), so being logged in on Vimeo will authenticate the iframe automatically.</p>
-    </div>
-
     <div class="iframe-container">
         <h2>Testing Vimeo Player Authentication</h2>
         <iframe id="vimeoPlayer" 
-                src="https://player.vimeo.com/video/935884964" 
+                src="https://player.vimeo.com/video/935884964?background=1" 
                 width="640" 
                 height="360" 
-                frameborder="0"
-                allow="autoplay; fullscreen; picture-in-picture"
-                referrerpolicy="strict-origin-when-cross-origin">
+                frameborder="0">
         </iframe>
-        <p><small>Video ID: 935884964</small></p>
     </div>
 
     <div class="method">
-        <h2>Method 1: Extract from Script Tags</h2>
+        <h2>Method 1: Direct Fetch (Simple)</h2>
         <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
         <button onclick="method1()">Extract Config</button>
         <pre id="result1">Results will appear here...</pre>
     </div>
 
     <div class="method">
-        <h2>Method 2: Show All Scripts (Debug)</h2>
+        <h2>Method 2: CORS Proxy (If Method 1 fails)</h2>
         <input type="text" id="videoId2" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="method2()">Show All Scripts</button>
+        <button onclick="method2()">Extract Config</button>
         <pre id="result2">Results will appear here...</pre>
     </div>
 
     <script>
-        function extractConfigFromScripts(html) {
-            // Parse HTML and extract all script tags
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const scripts = doc.querySelectorAll('script');
-            
-            console.log(`Found ${scripts.length} script tags`);
-            
-            for (let script of scripts) {
-                const scriptContent = script.textContent || script.innerText;
-                
-                // Look for window.playerConfig in each script
-                if (scriptContent.includes('window.playerConfig')) {
-                    console.log('Found script with playerConfig!');
-                    
-                    // Try to extract the config object
-                    const match = scriptContent.match(/window\.playerConfig\s*=\s*({[\s\S]*?});/);
-                    if (match) {
-                        try {
-                            const config = JSON.parse(match[1]);
-                            return config;
-                        } catch (e) {
-                            console.error('Failed to parse config:', e);
-                            // Return the raw match for debugging
-                            return { error: 'Parse failed', raw: match[1].substring(0, 500) };
-                        }
-                    }
-                }
-            }
-            
-            return null;
-        }
-
-        function getAllScripts(html) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const scripts = doc.querySelectorAll('script');
-            
-            let result = `Found ${scripts.length} script tags:\n\n`;
-            
-            scripts.forEach((script, index) => {
-                const content = script.textContent || script.innerText;
-                const src = script.getAttribute('src');
-                
-                result += `--- Script ${index + 1} ---\n`;
-                if (src) {
-                    result += `Source: ${src}\n`;
-                }
-                result += `Has playerConfig: ${content.includes('playerConfig')}\n`;
-                result += `Length: ${content.length} chars\n`;
-                if (content.includes('playerConfig')) {
-                    result += `Content preview:\n${content.substring(0, 1000)}...\n`;
-                }
-                result += '\n';
-            });
-            
-            return result;
-        }
-
-        // Method 1: Extract config from scripts
+        // Method 1: Direct fetch (will work if CORS allows)
         async function method1() {
             const videoId = document.getElementById('videoId1').value;
             const resultDiv = document.getElementById('result1');
@@ -164,40 +85,47 @@
             try {
                 resultDiv.textContent = 'Fetching...';
                 
-                const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
-                
-                const response = await fetch(proxyUrl + targetUrl);
+                const response = await fetch(`https://player.vimeo.com/video/${videoId}`);
                 const html = await response.text();
                 
-                const config = extractConfigFromScripts(html);
+                // Extract window.playerConfig
+                const match = html.match(/window\.playerConfig\s*=\s*(\{[\s\S]*?\});/);
                 
-                if (config) {
+                if (match) {
+                    const config = JSON.parse(match[1]);
                     resultDiv.textContent = JSON.stringify(config, null, 2);
                 } else {
-                    resultDiv.textContent = 'Could not find window.playerConfig in any script tag.\n\nTry Method 2 to see all scripts.';
+                    resultDiv.textContent = 'Could not find playerConfig in response';
                 }
             } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}`;
+                resultDiv.textContent = `Error: ${error.message}\n\nThis method requires CORS to be enabled. Try Method 2 or use a server-side solution.`;
             }
         }
 
-        // Method 2: Show all scripts for debugging
+        // Method 2: Using CORS proxy
         async function method2() {
             const videoId = document.getElementById('videoId2').value;
             const resultDiv = document.getElementById('result2');
             
             try {
-                resultDiv.textContent = 'Fetching...';
+            resultDiv.textContent = 'Fetching via proxy...';
                 
+                // Using a CORS proxy service
                 const proxyUrl = 'https://api.allorigins.win/raw?url=';
                 const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
                 
                 const response = await fetch(proxyUrl + targetUrl);
                 const html = await response.text();
                 
-                const scriptsInfo = getAllScripts(html);
-                resultDiv.textContent = scriptsInfo;
+                // Extract window.playerConfig
+                const match = html.match(/window\.playerConfig\s*=\s*(\{[\s\S]*?\});/);
+                
+                if (match) {
+                    const config = JSON.parse(match[1]);
+                    resultDiv.textContent = JSON.stringify(config, null, 2);
+                } else {
+                    resultDiv.textContent = 'Could not find playerConfig in response';
+                }
             } catch (error) {
                 resultDiv.textContent = `Error: ${error.message}`;
             }
