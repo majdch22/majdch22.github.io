@@ -1,36 +1,34 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Adobe PostMessage Audit</title>
+    <title>Privy postMessage Test</title>
 </head>
 <body>
-    <div id="status">Waiting for Adobe Iframe...</div>
+    <h1>Privy postMessage Capture</h1>
     
-    <iframe id="adobe_frame" 
-        src="https://ui.messaging.adobe.com/3.8.16/index.html?lc=en_us#%7B%22window_origin%22%3A%22https%3A%2F%2Fmajdch22.github.io%22%2C%22hostWindow%22%3A%22parent%22%2C%22theme%22%3A%22darkest%22%2C%22customData%22%3A%7B%22userConsent%22%3Atrue%7D%2C%22openedAsIndependentWindow%22%3Afalse%7D" 
-        style="width:400px; height:600px; border:1px solid #ccc;">
-    </iframe>
+    <!-- Iframe embedding Privy -->
+    <iframe id="privyFrame" src="https://privy.com" width="800" height="600"></iframe>
+    
+    <h2>Captured Messages:</h2>
+    <div id="messages"></div>
 
     <script>
-        window.addEventListener("message", (event) => {
-            // Log everything coming from the Adobe domain
-            if (event.origin.includes("adobe.com")) {
-                console.log("--- MESSAGE RECEIVED FROM ADOBE ---");
-                console.log("Data:", event.data);
-                
-                // Update UI to show we intercepted something
-                document.getElementById("status").innerHTML = 
-                    "<b>Intercepted:</b> " + JSON.stringify(event.data);
-                
-                // If the iframe asks for a token, we try to give it a fake one
-                if (event.data && event.data.msgType.includes("SEND_ACCESS_TOKEN")) {
-                    console.warn("Iframe is asking for a token! Sending spoofed token...");
-                    event.source.postMessage(JSON.stringify({
-                        msgType: "adbmsgui_INITIAL_DATA",
-                        message: { accessToken: "SPOOFED_TOKEN_12345" }
-                    }), "*");
-                }
-            }
+        // Listen for all postMessage events
+        window.addEventListener('message', function(event) {
+            console.log('Message received:', event);
+            
+            // Log all details
+            const messageDiv = document.createElement('div');
+            messageDiv.style.border = '1px solid #ccc';
+            messageDiv.style.padding = '10px';
+            messageDiv.style.margin = '10px 0';
+            messageDiv.innerHTML = `
+                <strong>Origin:</strong> ${event.origin}<br>
+                <strong>Data:</strong> <pre>${JSON.stringify(event.data, null, 2)}</pre>
+                <strong>Source:</strong> ${event.source === document.getElementById('privyFrame').contentWindow ? 'iframe' : 'unknown'}
+            `;
+            
+            document.getElementById('messages').appendChild(messageDiv);
         }, false);
     </script>
 </body>
