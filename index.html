@@ -51,6 +51,10 @@
             color: green;
             font-weight: bold;
         }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -77,7 +81,10 @@
         function extractPlayerConfig(scriptContent) {
             // Find where window.playerConfig starts
             const startMatch = scriptContent.match(/window\.playerConfig\s*=\s*/);
-            if (!startMatch) return null;
+            if (!startMatch) {
+                console.log('No window.playerConfig found');
+                return null;
+            }
             
             const startIndex = startMatch.index + startMatch[0].length;
             let content = scriptContent.substring(startIndex);
@@ -127,14 +134,20 @@
                 }
             }
             
-            if (endIndex === -1) return null;
+            if (endIndex === -1) {
+                console.log('Could not find closing brace');
+                return null;
+            }
             
             const configStr = content.substring(0, endIndex);
             
             try {
-                return JSON.parse(configStr);
+                const parsed = JSON.parse(configStr);
+                console.log('Successfully parsed config');
+                return parsed;
             } catch (e) {
                 console.error('Parse error:', e);
+                console.error('Config string preview:', configStr.substring(0, 200));
                 return { error: 'Failed to parse', preview: configStr.substring(0, 500) };
             }
         }
@@ -145,17 +158,47 @@
             
             try {
                 resultDiv.textContent = 'Fetching...';
+                console.log('Fetching video:', videoId);
                 
-                const proxyUrl = 'https://api.allorigins.win/raw?url=';
-                const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
+                // Try multiple CORS proxies in case one fails
+                const proxies = [
+                    'https://api.allorigins.win/raw?url=',
+                    'https://corsproxy.io/?',
+                    'https://api.codetabs.com/v1/proxy?quest='
+                ];
                 
-                const response = await fetch(proxyUrl + targetUrl);
-                const html = await response.text();
+                const targetUrl = `https://player.vimeo.com/video/${videoId}`;
+                let html = null;
+                let lastError = null;
+                
+                // Try each proxy until one works
+                for (let proxyUrl of proxies) {
+                    try {
+                        console.log('Trying proxy:', proxyUrl);
+                        const encodedUrl = encodeURIComponent(targetUrl);
+                        const response = await fetch(proxyUrl + encodedUrl);
+                        
+                        if (response.ok) {
+                            html = await response.text();
+                            console.log('Got response, length:', html.length);
+                            break;
+                        }
+                    } catch (e) {
+                        console.log('Proxy failed:', proxyUrl, e.message);
+                        lastError = e;
+                    }
+                }
+                
+                if (!html) {
+                    throw new Error('All proxies failed. Last error: ' + (lastError ? lastError.message : 'Unknown'));
+                }
                 
                 // Parse HTML and find script with playerConfig
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
                 const scripts = doc.querySelectorAll('script');
+                
+                console.log('Found', scripts.length, 'script tags');
                 
                 let config = null;
                 
@@ -165,18 +208,25 @@
                     if (scriptContent.includes('window.playerConfig')) {
                         console.log('Found script with playerConfig, extracting...');
                         config = extractPlayerConfig(scriptContent);
-                        if (config) break;
+                        if (config && !config.error) break;
                     }
                 }
                 
-                if (config) {
+                if (config && !config.error) {
                     resultDiv.innerHTML = '<span class="success">✓ Config extracted successfully!</span>\n\n' + 
                                          JSON.stringify(config, null, 2);
+                } else if (config && config.error) {
+                    resultDiv.innerHTML = '<span class="error">✗ Parse error</span>\n\n' + 
+                                         'Found playerConfig but could not parse it.\n\n' +
+                                         'Preview:\n' + config.preview;
                 } else {
-                    resultDiv.textContent = 'Could not extract playerConfig';
+                    resultDiv.innerHTML = '<span class="error">✗ Could not find playerConfig</span>\n\n' +
+                                         'The HTML was fetched but window.playerConfig was not found.\n' +
+                                         'HTML preview:\n' + html.substring(0, 500) + '...';
                 }
             } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}\n${error.stack}`;
+                resultDiv.innerHTML = `<span class="error">✗ Error: ${error.message}</span>\n\n${error.stack}`;
+                console.error('Full error:', error);
             }
         }
     </script>
