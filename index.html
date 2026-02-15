@@ -237,6 +237,21 @@
         .status-indicator.inactive {
             background: #858585;
         }
+
+        .debug-info {
+            background: #2d2d30;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            border: 1px solid #3e3e42;
+            font-size: 11px;
+            color: #858585;
+        }
+
+        .debug-info .count {
+            color: #4fc3f7;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -261,7 +276,12 @@
             </div>
             
             <div class="panel">
-                <div class="panel-header">INTERCEPTED TRAFFIC</div>
+                <div class="panel-header">
+                    INTERCEPTED TRAFFIC
+                    <span style="float: right; font-size: 11px; font-weight: normal; color: #858585;">
+                        <span id="requestCount">0</span> requests
+                    </span>
+                </div>
                 <div class="log-container" id="logContainer">
                     <div class="empty-state">Initializing Service Worker...</div>
                 </div>
@@ -272,30 +292,56 @@
     <script>
         let logEntries = [];
         let serviceWorkerReady = false;
+        let messageCount = 0;
+        
+        console.log('[PAGE] Initializing...');
         
         // Register Service Worker
         if ('serviceWorker' in navigator) {
+            console.log('[PAGE] Registering Service Worker...');
+            
             navigator.serviceWorker.register('sw-proxy.js', { scope: './' })
                 .then(registration => {
-                    console.log('✓ Service Worker registered');
+                    console.log('[PAGE] ✓ Service Worker registered:', registration);
                     return navigator.serviceWorker.ready;
                 })
                 .then(registration => {
                     serviceWorkerReady = true;
                     document.getElementById('swStatus').className = 'status-indicator active';
+                    console.log('[PAGE] ✓ Service Worker ready:', registration);
                     
-                    // Listen for intercepted requests
+                    // Listen for intercepted requests - MULTIPLE WAYS
+                    
+                    // Method 1: Direct event listener
                     navigator.serviceWorker.addEventListener('message', event => {
-                        if (event.data.type === 'intercepted') {
+                        console.log('[PAGE] Message received (method 1):', event.data);
+                        if (event.data && event.data.type === 'intercepted') {
+                            messageCount++;
+                            console.log('[PAGE] Processing intercepted request #' + messageCount);
                             logRequest(event.data);
                         }
                     });
                     
+                    // Method 2: onmessage handler
+                    navigator.serviceWorker.onmessage = (event) => {
+                        console.log('[PAGE] Message received (method 2):', event.data);
+                        if (event.data && event.data.type === 'intercepted') {
+                            messageCount++;
+                            console.log('[PAGE] Processing intercepted request #' + messageCount);
+                            logRequest(event.data);
+                        }
+                    };
+                    
+                    console.log('[PAGE] Message listeners registered');
+                    
                     // Auto-load default URL
-                    setTimeout(() => loadUrl(), 500);
+                    setTimeout(() => {
+                        console.log('[PAGE] Auto-loading default URL...');
+                        loadUrl();
+                    }, 500);
                 })
                 .catch(error => {
-                    console.error('✗ Service Worker failed:', error);
+                    console.error('[PAGE] ✗ Service Worker failed:', error);
                     document.getElementById('swStatus').className = 'status-indicator inactive';
                     document.getElementById('logContainer').innerHTML = `
                         <div class="empty-state" style="color: #f48771;">
@@ -306,6 +352,7 @@
                     `;
                 });
         } else {
+            console.error('[PAGE] Service Workers not supported');
             document.getElementById('logContainer').innerHTML = `
                 <div class="empty-state" style="color: #f48771;">
                     Service Workers not supported in this browser
@@ -314,6 +361,8 @@
         }
         
         function loadUrl() {
+            console.log('[PAGE] loadUrl() called');
+            
             if (!serviceWorkerReady) {
                 alert('Please wait for Service Worker to initialize');
                 return;
@@ -327,8 +376,11 @@
             
             const fullUrl = url.match(/^https?:\/\//) ? url : 'https://' + url;
             
+            console.log('[PAGE] Loading URL:', fullUrl);
+            
             // Clear logs
             logEntries = [];
+            messageCount = 0;
             renderLog();
             
             // Load URL
@@ -336,6 +388,8 @@
         }
         
         function logRequest(data) {
+            console.log('[PAGE] logRequest() called with:', data);
+            
             logEntries.unshift({
                 timestamp: new Date().toLocaleTimeString(),
                 url: data.url,
@@ -347,18 +401,33 @@
             });
             
             if (logEntries.length > 100) logEntries.pop();
+            
+            console.log('[PAGE] Total entries:', logEntries.length);
             renderLog();
         }
         
         function renderLog() {
             const container = document.getElementById('logContainer');
+            document.getElementById('requestCount').textContent = logEntries.length;
             
             if (logEntries.length === 0) {
-                container.innerHTML = '<div class="empty-state">Waiting for requests...</div>';
+                container.innerHTML = `
+                    <div class="debug-info">
+                        Service Worker: <span class="count">${serviceWorkerReady ? 'READY' : 'NOT READY'}</span><br>
+                        Messages received: <span class="count">${messageCount}</span><br>
+                        Requests logged: <span class="count">${logEntries.length}</span>
+                    </div>
+                    <div class="empty-state">Waiting for requests...<br>Load a URL to see intercepted traffic.</div>
+                `;
                 return;
             }
             
-            container.innerHTML = logEntries.map(entry => {
+            container.innerHTML = `
+                <div class="debug-info">
+                    Messages received: <span class="count">${messageCount}</span> | 
+                    Requests logged: <span class="count">${logEntries.length}</span>
+                </div>
+            ` + logEntries.map(entry => {
                 const statusClass = entry.status >= 200 && entry.status < 300 ? 'success' : 
                                    entry.status >= 400 ? 'error' : '';
                 
@@ -395,9 +464,13 @@
         }
         
         function clearLog() {
+            console.log('[PAGE] Clearing log');
             logEntries = [];
+            messageCount = 0;
             renderLog();
         }
+        
+        console.log('[PAGE] Script loaded');
     </script>
 </body>
 </html>
