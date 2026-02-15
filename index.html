@@ -1,524 +1,275 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Full Request/Response Interceptor</title>
+    <title>Vimeo Config Extractor (With Auth)</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
             font-family: 'Courier New', monospace;
             background: #1e1e1e;
             color: #d4d4d4;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 1800px;
+            max-width: 1200px;
             margin: 0 auto;
+            padding: 20px;
         }
         
         h1 {
             color: #4fc3f7;
-            margin-bottom: 20px;
-            font-size: 24px;
         }
         
-        .controls {
+        .container {
             background: #252526;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
+            padding: 20px;
+            border-radius: 8px;
             border: 1px solid #3e3e42;
+            margin-bottom: 20px;
         }
         
-        .controls input {
-            width: calc(100% - 220px);
+        input {
+            width: 400px;
             padding: 10px;
             font-size: 14px;
             background: #3c3c3c;
             border: 1px solid #3e3e42;
             color: #d4d4d4;
-            border-radius: 3px;
+            border-radius: 4px;
             font-family: 'Courier New', monospace;
         }
         
-        .controls button {
+        button {
             padding: 10px 20px;
             font-size: 14px;
             background: #0e639c;
             color: white;
             border: none;
-            border-radius: 3px;
+            border-radius: 4px;
             cursor: pointer;
             margin-left: 10px;
             font-family: 'Courier New', monospace;
         }
         
-        .controls button:hover {
+        button:hover {
             background: #1177bb;
         }
         
-        .layout {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+        .method {
+            margin-bottom: 30px;
         }
         
-        .panel {
-            background: #252526;
+        .method h2 {
+            color: #dcdcaa;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        
+        .result {
+            background: #1e1e1e;
+            padding: 15px;
             border-radius: 4px;
             border: 1px solid #3e3e42;
-            overflow: hidden;
-        }
-        
-        .panel-header {
-            background: #2d2d30;
-            color: #cccccc;
-            padding: 10px 15px;
-            font-weight: bold;
-            border-bottom: 1px solid #3e3e42;
-            font-size: 13px;
-        }
-        
-        .iframe-container {
-            height: 600px;
-            background: white;
-        }
-        
-        iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-            background: white;
-        }
-        
-        .log-container {
-            height: 600px;
+            max-height: 500px;
             overflow-y: auto;
-            padding: 15px;
+            margin-top: 15px;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
         }
         
-        .log-container::-webkit-scrollbar {
+        .result::-webkit-scrollbar {
             width: 10px;
         }
         
-        .log-container::-webkit-scrollbar-track {
+        .result::-webkit-scrollbar-track {
             background: #1e1e1e;
         }
         
-        .log-container::-webkit-scrollbar-thumb {
+        .result::-webkit-scrollbar-thumb {
             background: #424242;
             border-radius: 5px;
         }
         
-        .request-block {
-            margin-bottom: 25px;
-            padding: 15px;
-            background: #1e1e1e;
-            border-radius: 4px;
-            border-left: 3px solid #4fc3f7;
-        }
-        
-        .request-line {
-            color: #4ec9b0;
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 8px;
-        }
-        
-        .method {
-            color: #c586c0;
-            font-weight: bold;
-        }
-        
-        .status {
-            color: #4fc3f7;
-            font-weight: bold;
-        }
-        
-        .status.success {
+        .success {
             color: #6a9955;
+            font-weight: bold;
         }
         
-        .status.error {
+        .error {
             color: #f48771;
+            font-weight: bold;
         }
         
-        .url {
-            color: #9cdcfe;
-            word-break: break-all;
-            margin-bottom: 10px;
+        .warning {
+            background: #3e2a00;
+            border: 1px solid #ffa500;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            color: #ffa500;
             font-size: 13px;
         }
         
-        .section-title {
-            color: #dcdcaa;
-            font-size: 12px;
-            margin-top: 12px;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-            font-weight: bold;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .section-title:hover {
-            color: #e5c07b;
-        }
-
-        .section-title::before {
-            content: '▼ ';
-            display: inline-block;
-            transition: transform 0.2s;
-        }
-
-        .section-title.collapsed::before {
-            transform: rotate(-90deg);
-        }
-        
-        .headers-box {
-            background: #2d2d30;
-            padding: 10px;
-            border-radius: 3px;
-            border: 1px solid #3e3e42;
-            font-size: 11px;
-            max-height: 200px;
-            overflow-y: auto;
-            line-height: 1.6;
-        }
-
-        .headers-box::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .headers-box::-webkit-scrollbar-track {
-            background: #1e1e1e;
-        }
-
-        .headers-box::-webkit-scrollbar-thumb {
-            background: #424242;
+        .info {
+            background: #1e3a5f;
+            border: 1px solid #4fc3f7;
+            padding: 15px;
             border-radius: 4px;
-        }
-        
-        .header-item {
-            margin-bottom: 5px;
-        }
-
-        .header-key {
-            color: #9cdcfe;
-            font-weight: bold;
+            margin-bottom: 20px;
+            color: #4fc3f7;
+            font-size: 13px;
         }
 
-        .header-value {
+        .highlight {
+            background: #2d2d30;
+            padding: 2px 6px;
+            border-radius: 3px;
             color: #ce9178;
-            word-break: break-all;
         }
 
-        .cookie-highlight {
-            background: #3e2a00;
-            padding: 2px 4px;
-            border-radius: 2px;
-        }
-        
-        .response-body {
-            background: #2d2d30;
-            padding: 10px;
-            border-radius: 3px;
-            border: 1px solid #3e3e42;
-            font-size: 12px;
-            white-space: pre-wrap;
-            word-break: break-all;
-            color: #d4d4d4;
-            max-height: 300px;
-            overflow-y: auto;
-            line-height: 1.5;
-        }
-        
-        .response-body::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        .response-body::-webkit-scrollbar-track {
-            background: #1e1e1e;
-        }
-        
-        .response-body::-webkit-scrollbar-thumb {
-            background: #424242;
-            border-radius: 4px;
-        }
-        
-        .timestamp {
-            color: #858585;
-            font-size: 11px;
-            margin-top: 8px;
-        }
-        
-        .clear-btn {
-            background: #5a5a5a !important;
-            float: right;
-        }
-        
-        .clear-btn:hover {
-            background: #6e6e6e !important;
-        }
-
-        .empty-state {
-            color: #858585;
-            text-align: center;
-            padding: 40px;
-            font-size: 14px;
-        }
-
-        .status-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-indicator.active {
-            background: #6a9955;
-            box-shadow: 0 0 8px #6a9955;
-        }
-
-        .status-indicator.inactive {
-            background: #858585;
-        }
-
-        .collapsible-content {
-            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
-            overflow: hidden;
-        }
-
-        .collapsible-content.collapsed {
-            max-height: 0 !important;
-            opacity: 0;
+        .iframe-container {
+            display: none;
         }
     </style>
 </head>
 <body>
+    <h1>🔐 Vimeo Config Extractor (With Authentication)</h1>
+
+    <div class="info">
+        <strong>💡 How this works:</strong><br>
+        This uses <code>fetch()</code> with <code>credentials: 'include'</code> to send your browser's Vimeo cookies.
+        This way, the request is authenticated and you get the full playerConfig with private data.
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ CORS Limitation:</strong><br>
+        Due to CORS (Cross-Origin Resource Sharing), browsers block reading responses from cross-origin requests.
+        You'll see the request in Network tab, but JavaScript can't read the response directly.
+        <br><br>
+        <strong>Workarounds:</strong><br>
+        1. Use browser DevTools Network tab (F12) to see the full response<br>
+        2. Use a browser extension (like the one I created)<br>
+        3. Set up a backend proxy that you control
+    </div>
+
+    <!-- Hidden iframe to trigger authenticated request -->
+    <div class="iframe-container">
+        <iframe id="vimeoPlayer" width="1" height="1" frameborder="0"></iframe>
+    </div>
+
     <div class="container">
-        <h1>🔍 Full Request/Response Interceptor</h1>
-        
-        <div class="controls">
-            <input type="text" id="urlInput" placeholder="Enter URL (e.g., https://player.vimeo.com/video/935884964?background=1)" value="https://player.vimeo.com/video/935884964?background=1">
-            <button onclick="loadUrl()">Load URL</button>
-            <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+        <div class="method">
+            <h2>Method 1: Direct Fetch (Shows Request, CORS Blocks Response)</h2>
+            <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
+            <button onclick="directFetch()">Fetch (Check Network Tab)</button>
+            <div class="result" id="result1">Results will appear here...</div>
         </div>
-        
-        <div class="layout">
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="status-indicator" id="swStatus"></span>
-                    IFRAME CONTENT
-                </div>
-                <div class="iframe-container">
-                    <iframe id="targetFrame" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
-                </div>
-            </div>
-            
-            <div class="panel">
-                <div class="panel-header">
-                    INTERCEPTED TRAFFIC
-                    <span style="float: right; font-size: 11px; font-weight: normal; color: #858585;">
-                        <span id="requestCount">0</span> requests
-                    </span>
-                </div>
-                <div class="log-container" id="logContainer">
-                    <div class="empty-state">Initializing Service Worker...</div>
-                </div>
-            </div>
+
+        <div class="method">
+            <h2>Method 2: Load in Hidden Iframe (Check Network Tab)</h2>
+            <input type="text" id="videoId2" placeholder="Enter Vimeo Video ID" value="935884964">
+            <button onclick="loadInIframe()">Load in Iframe</button>
+            <div class="result" id="result2">Check your browser's Network tab (F12) to see the authenticated request!</div>
+        </div>
+
+        <div class="method">
+            <h2>Method 3: Open in New Tab (Manual Copy)</h2>
+            <input type="text" id="videoId3" placeholder="Enter Vimeo Video ID" value="935884964">
+            <button onclick="openInNewTab()">Open in New Tab</button>
+            <div class="result" id="result3">1. Click the button to open the page in a new tab<br>2. Right-click on the page<br>3. Click "View Page Source"<br>4. Search for "window.playerConfig"<br>5. Copy the entire JSON config</div>
         </div>
     </div>
-    
+
+    <div class="container">
+        <h2>📊 What You'll See in Network Tab</h2>
+        <p style="color: #9cdcfe;">Press <strong>F12</strong> → Go to <strong>Network</strong> tab → Use any method above</p>
+        <p style="color: #9cdcfe;">Look for the request to <span class="highlight">player.vimeo.com/video/...</span></p>
+        <p style="color: #6a9955;">✓ Request Headers will include your cookies</p>
+        <p style="color: #6a9955;">✓ Response will contain the full HTML with window.playerConfig</p>
+        <p style="color: #6a9955;">✓ Right-click the request → Copy → Copy Response to get the HTML</p>
+    </div>
+
     <script>
-        let logEntries = [];
-        let serviceWorkerReady = false;
-        
-        console.log('[PAGE] Initializing...');
-        
-        // Register Service Worker
-        if ('serviceWorker' in navigator) {
-            console.log('[PAGE] Registering Service Worker...');
+        async function directFetch() {
+            const videoId = document.getElementById('videoId1').value;
+            const resultDiv = document.getElementById('result1');
             
-            navigator.serviceWorker.register('sw-proxy.js', { scope: './' })
-                .then(registration => {
-                    console.log('[PAGE] ✓ Service Worker registered');
-                    return navigator.serviceWorker.ready;
-                })
-                .then(registration => {
-                    serviceWorkerReady = true;
-                    document.getElementById('swStatus').className = 'status-indicator active';
-                    console.log('[PAGE] ✓ Service Worker ready');
-                    
-                    // Listen for intercepted requests
-                    navigator.serviceWorker.addEventListener('message', event => {
-                        console.log('[PAGE] Message received:', event.data);
-                        if (event.data && event.data.type === 'intercepted') {
-                            logRequest(event.data);
-                        }
-                    });
-                    
-                    console.log('[PAGE] Message listeners registered');
-                    
-                    // Auto-load if URL is set
-                    setTimeout(() => {
-                        if (document.getElementById('urlInput').value) {
-                            loadUrl();
-                        }
-                    }, 500);
-                })
-                .catch(error => {
-                    console.error('[PAGE] ✗ Service Worker failed:', error);
-                    document.getElementById('swStatus').className = 'status-indicator inactive';
-                    document.getElementById('logContainer').innerHTML = `
-                        <div class="empty-state" style="color: #f48771;">
-                            Service Worker registration failed!<br>
-                            Make sure sw-proxy.js is in the same directory.<br>
-                            Error: ${error.message}
-                        </div>
-                    `;
+            try {
+                resultDiv.textContent = 'Fetching... (Check Network tab for the actual request)';
+                
+                const url = `https://player.vimeo.com/video/${videoId}`;
+                
+                // This will send cookies, but CORS will block reading the response
+                const response = await fetch(url, {
+                    method: 'GET',
+                    credentials: 'include', // This sends cookies!
+                    mode: 'no-cors' // This allows the request but blocks response reading
                 });
-        } else {
-            console.error('[PAGE] Service Workers not supported');
-        }
-        
-        function loadUrl() {
-            if (!serviceWorkerReady) {
-                alert('Please wait for Service Worker to initialize');
-                return;
-            }
-            
-            const url = document.getElementById('urlInput').value.trim();
-            if (!url) {
-                alert('Please enter a URL');
-                return;
-            }
-            
-            const fullUrl = url.match(/^https?:\/\//) ? url : 'https://' + url;
-            
-            console.log('[PAGE] Loading URL:', fullUrl);
-            
-            // Clear logs
-            logEntries = [];
-            renderLog();
-            
-            // Load URL
-            document.getElementById('targetFrame').src = fullUrl;
-        }
-        
-        function logRequest(data) {
-            console.log('[PAGE] Logging request:', data.url);
-            
-            logEntries.unshift({
-                timestamp: new Date().toLocaleTimeString(),
-                url: data.url,
-                method: data.method,
-                status: data.status,
-                statusText: data.statusText,
-                requestHeaders: data.requestHeaders || {},
-                responseHeaders: data.responseHeaders || {},
-                bodyPreview: data.bodyPreview,
-                contentType: data.contentType
-            });
-            
-            if (logEntries.length > 50) logEntries.pop();
-            
-            renderLog();
-        }
-        
-        function renderLog() {
-            const container = document.getElementById('logContainer');
-            document.getElementById('requestCount').textContent = logEntries.length;
-            
-            if (logEntries.length === 0) {
-                container.innerHTML = '<div class="empty-state">Waiting for requests...<br>Load a URL to see intercepted traffic.</div>';
-                return;
-            }
-            
-            container.innerHTML = logEntries.map((entry, index) => {
-                const statusClass = entry.status >= 200 && entry.status < 300 ? 'success' : 
-                                   entry.status >= 400 ? 'error' : '';
                 
-                // Extract cookie from request headers
-                const cookieHeader = entry.requestHeaders['cookie'] || '';
+                resultDiv.innerHTML = `<span class="success">✓ Request sent with cookies!</span>\n\n` +
+                    `The browser sent your Vimeo cookies with this request.\n` +
+                    `However, due to CORS, JavaScript cannot read the response.\n\n` +
+                    `<strong>To see the response:</strong>\n` +
+                    `1. Open DevTools (F12)\n` +
+                    `2. Go to Network tab\n` +
+                    `3. Find the request to player.vimeo.com\n` +
+                    `4. Click on it to see Request Headers (with cookies) and Response\n` +
+                    `5. Right-click → Copy → Copy Response`;
                 
-                return `
-                    <div class="request-block">
-                        <div class="request-line">
-                            <span class="method">${entry.method}</span>
-                            <span class="status ${statusClass}">${entry.status}</span>
-                            <span style="color: #858585;">${entry.statusText}</span>
-                        </div>
-                        
-                        <div class="url">${entry.url}</div>
-                        
-                        <div class="section-title" onclick="toggleSection('req-${index}')">
-                            Request Headers ${cookieHeader ? '🍪' : ''}
-                        </div>
-                        <div id="req-${index}" class="collapsible-content headers-box">
-                            ${Object.entries(entry.requestHeaders).map(([key, value]) => `
-                                <div class="header-item">
-                                    <span class="header-key">${escapeHtml(key)}:</span>
-                                    <span class="header-value ${key === 'cookie' ? 'cookie-highlight' : ''}">${escapeHtml(value)}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                        
-                        <div class="section-title" onclick="toggleSection('res-${index}')">
-                            Response Headers
-                        </div>
-                        <div id="res-${index}" class="collapsible-content headers-box">
-                            ${Object.entries(entry.responseHeaders).map(([key, value]) => `
-                                <div class="header-item">
-                                    <span class="header-key">${escapeHtml(key)}:</span>
-                                    <span class="header-value">${escapeHtml(value)}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                        
-                        ${entry.bodyPreview ? `
-                            <div class="section-title" onclick="toggleSection('body-${index}')">
-                                Response Body
-                            </div>
-                            <div id="body-${index}" class="collapsible-content response-body">${escapeHtml(entry.bodyPreview)}</div>
-                        ` : '<div style="color: #858585; font-size: 12px; margin-top: 10px;">(No response body)</div>'}
-                        
-                        <div class="timestamp">${entry.timestamp}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        function toggleSection(id) {
-            const element = document.getElementById(id);
-            const title = element.previousElementSibling;
-            
-            if (element.classList.contains('collapsed')) {
-                element.classList.remove('collapsed');
-                title.classList.remove('collapsed');
-            } else {
-                element.classList.add('collapsed');
-                title.classList.add('collapsed');
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>\n\n` +
+                    `This is expected due to CORS restrictions.\n` +
+                    `The request was still sent - check your Network tab!`;
             }
         }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+
+        function loadInIframe() {
+            const videoId = document.getElementById('videoId2').value;
+            const resultDiv = document.getElementById('result2');
+            const iframe = document.getElementById('vimeoPlayer');
+            
+            const url = `https://player.vimeo.com/video/${videoId}`;
+            iframe.src = url;
+            
+            resultDiv.innerHTML = `<span class="success">✓ Loading in iframe...</span>\n\n` +
+                `The iframe is loading the page with your authentication.\n\n` +
+                `<strong>To see the request and response:</strong>\n` +
+                `1. Open DevTools (F12)\n` +
+                `2. Go to Network tab\n` +
+                `3. Look for the request to: ${url}\n` +
+                `4. Click on it to see:\n` +
+                `   - Request Headers (including your cookies 🍪)\n` +
+                `   - Response (with full window.playerConfig)\n` +
+                `5. Right-click → Copy → Copy Response to get the HTML`;
         }
-        
-        function clearLog() {
-            logEntries = [];
-            renderLog();
+
+        function openInNewTab() {
+            const videoId = document.getElementById('videoId3').value;
+            const url = `https://player.vimeo.com/video/${videoId}`;
+            
+            window.open(url, '_blank');
+            
+            document.getElementById('result3').innerHTML = 
+                `<span class="success">✓ Opening in new tab...</span>\n\n` +
+                `The page will open authenticated (with your cookies).\n\n` +
+                `<strong>To extract the config:</strong>\n` +
+                `1. Wait for the page to load\n` +
+                `2. Right-click on the page → "View Page Source"\n` +
+                `3. Press Ctrl+F and search for "window.playerConfig"\n` +
+                `4. Copy the entire JSON object starting from the { after =\n` +
+                `5. Paste it into a JSON formatter/validator\n\n` +
+                `OR use the Network tab method described above.`;
+        }
+
+        // Helper function to parse playerConfig from HTML
+        function extractPlayerConfig(html) {
+            const match = html.match(/window\.playerConfig\s*=\s*(\{[\s\S]*?\});/);
+            if (match) {
+                try {
+                    return JSON.parse(match[1]);
+                } catch (e) {
+                    console.error('Parse error:', e);
+                    return null;
+                }
+            }
+            return null;
         }
     </script>
 </body>
