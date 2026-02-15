@@ -1,27 +1,33 @@
 // Service Worker for intercepting requests and responses
+// Enhanced version with detailed logging
+
+console.log('[SW] Service Worker script loaded');
 
 self.addEventListener('install', (event) => {
-    console.log('Service Worker installing...');
+    console.log('[SW] Installing...');
     self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-    console.log('Service Worker activating...');
+    console.log('[SW] Activating...');
     event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
     
-    // Only intercept requests from our origin or requests made by the iframe
     // Skip the service worker script itself
-    if (url.pathname === '/sw-proxy.js') {
+    if (url.pathname.includes('sw-proxy.js')) {
         return;
     }
+    
+    console.log('[SW] Intercepting:', event.request.method, event.request.url);
     
     event.respondWith(
         fetch(event.request.clone())
             .then(async (response) => {
+                console.log('[SW] Response received:', response.status, event.request.url);
+                
                 // Clone the response so we can read it
                 const responseClone = response.clone();
                 
@@ -46,47 +52,61 @@ self.addEventListener('fetch', (event) => {
                             if (text.length > 500 || lines.length > 3) {
                                 bodyPreview += '\n... (truncated)';
                             }
+                            
+                            console.log('[SW] Body preview length:', bodyPreview.length);
                         } catch (e) {
                             bodyPreview = `[Error reading body: ${e.message}]`;
+                            console.error('[SW] Error reading body:', e);
                         }
                     } else {
                         bodyPreview = `[Binary content: ${contentType}]`;
                     }
                     
+                    // Prepare the message
+                    const message = {
+                        type: 'intercepted',
+                        url: event.request.url,
+                        method: event.request.method,
+                        status: response.status,
+                        statusText: response.statusText,
+                        contentType: contentType,
+                        bodyPreview: bodyPreview
+                    };
+                    
+                    console.log('[SW] Sending message to clients:', message);
+                    
                     // Send intercepted data to all clients
-                    const clients = await self.clients.matchAll();
+                    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+                    console.log('[SW] Found clients:', clients.length);
+                    
                     clients.forEach(client => {
-                        client.postMessage({
-                            type: 'intercepted',
-                            url: event.request.url,
-                            method: event.request.method,
-                            status: response.status,
-                            statusText: response.statusText,
-                            contentType: contentType,
-                            bodyPreview: bodyPreview
-                        });
+                        console.log('[SW] Posting message to client:', client.id);
+                        client.postMessage(message);
                     });
+                    
                 } catch (error) {
-                    console.error('Error processing response:', error);
+                    console.error('[SW] Error processing response:', error);
                 }
                 
                 return response;
             })
             .catch((error) => {
-                console.error('Fetch failed:', error);
+                console.error('[SW] Fetch failed:', error);
                 
                 // Notify clients of the error
-                self.clients.matchAll().then(clients => {
+                self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then(clients => {
+                    const message = {
+                        type: 'intercepted',
+                        url: event.request.url,
+                        method: event.request.method,
+                        status: 0,
+                        statusText: 'Network Error',
+                        contentType: '',
+                        bodyPreview: `[Fetch failed: ${error.message}]`
+                    };
+                    
                     clients.forEach(client => {
-                        client.postMessage({
-                            type: 'intercepted',
-                            url: event.request.url,
-                            method: event.request.method,
-                            status: 0,
-                            statusText: 'Network Error',
-                            contentType: '',
-                            bodyPreview: `[Fetch failed: ${error.message}]`
-                        });
+                        client.postMessage(message);
                     });
                 });
                 
@@ -94,3 +114,5 @@ self.addEventListener('fetch', (event) => {
             })
     );
 });
+
+console.log('[SW] All event listeners registered');
