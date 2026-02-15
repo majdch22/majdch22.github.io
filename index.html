@@ -1,35 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vimeo Config Extractor (With Cookies)</title>
+    <title>Vimeo Config Extractor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 1200px;
+            max-width: 900px;
             margin: 50px auto;
             padding: 20px;
-            background: #1e1e1e;
-            color: #d4d4d4;
         }
-        
-        h1 {
-            color: #4fc3f7;
-        }
-        
         input, button {
             padding: 10px;
             margin: 10px 0;
             font-size: 16px;
         }
-        
         input {
             width: 300px;
-            background: #3c3c3c;
-            border: 1px solid #3e3e42;
-            color: #d4d4d4;
-            border-radius: 4px;
         }
-        
         button {
             cursor: pointer;
             background: #007bff;
@@ -37,91 +24,37 @@
             border: none;
             border-radius: 4px;
         }
-        
         button:hover {
             background: #0056b3;
         }
-        
         pre {
-            background: #252526;
+            background: #f4f4f4;
             padding: 15px;
             border-radius: 4px;
             overflow-x: auto;
             max-height: 500px;
             overflow-y: auto;
-            border: 1px solid #3e3e42;
-            font-size: 12px;
         }
-        
         .method {
             margin: 30px 0;
             padding: 20px;
-            border: 1px solid #3e3e42;
+            border: 1px solid #ddd;
             border-radius: 4px;
-            background: #252526;
         }
-        
-        .method h2 {
-            color: #dcdcaa;
-            margin-top: 0;
-        }
-        
         .iframe-container {
             margin: 20px 0;
             padding: 20px;
             border: 2px solid #007bff;
             border-radius: 4px;
-            background: #252526;
         }
-        
         .success {
-            color: #6a9955;
+            color: green;
             font-weight: bold;
-        }
-        
-        .error {
-            color: #f48771;
-            font-weight: bold;
-        }
-        
-        .warning {
-            background: #3e2a00;
-            border: 1px solid #ffa500;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            color: #ffa500;
-        }
-        
-        .info {
-            background: #1e3a5f;
-            border: 1px solid #4fc3f7;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            color: #4fc3f7;
-        }
-
-        code {
-            background: #1e1e1e;
-            padding: 2px 6px;
-            border-radius: 3px;
-            color: #ce9178;
         }
     </style>
 </head>
 <body>
     <h1>Vimeo Config Extractor</h1>
-
-    <div class="info">
-        <strong>💡 This method combines your approach with authenticated fetching!</strong><br>
-        Three methods are available:
-        <ol>
-            <li><strong>Direct Fetch (with cookies)</strong> - Browser sends your cookies, but CORS blocks response reading</li>
-            <li><strong>CORS Proxy</strong> - Can read response, but NO cookies sent (unauthenticated)</li>
-            <li><strong>Hybrid: Load in Iframe + Extract from Network</strong> - Best of both worlds!</li>
-        </ol>
-    </div>
 
     <div class="iframe-container">
         <h2>Testing Vimeo Player Authentication</h2>
@@ -134,59 +67,10 @@
     </div>
 
     <div class="method">
-        <h2>Method 1: Direct Fetch with Cookies (Check Network Tab)</h2>
-        <p style="color: #9cdcfe;">
-            This sends your cookies to Vimeo, but CORS blocks reading the response in JavaScript.
-            <strong>Solution:</strong> Use browser DevTools Network tab to see the response!
-        </p>
+        <h2>Extract PlayerConfig</h2>
         <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="directFetchWithCookies()">Fetch with Cookies</button>
+        <button onclick="extractConfig()">Extract Config</button>
         <pre id="result1">Results will appear here...</pre>
-    </div>
-
-    <div class="method">
-        <h2>Method 2: CORS Proxy (No Auth, But Readable)</h2>
-        <p style="color: #9cdcfe;">
-            This uses a proxy to bypass CORS, but your cookies are NOT sent (unauthenticated request).
-        </p>
-        <input type="text" id="videoId2" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="corsProxyMethod()">Fetch via Proxy (No Cookies)</button>
-        <pre id="result2">Results will appear here...</pre>
-    </div>
-
-    <div class="method">
-        <h2>Method 3: Hybrid - Load Iframe + Copy from Network Tab ✅ RECOMMENDED</h2>
-        <p style="color: #6a9955;">
-            <strong>This is the best method!</strong> Combines authentication with data extraction.
-        </p>
-        <ol style="color: #9cdcfe; line-height: 1.8;">
-            <li>Click button below to load Vimeo in hidden iframe</li>
-            <li>Open DevTools (F12) → Network tab</li>
-            <li>Find the request to <code>player.vimeo.com/video/...</code></li>
-            <li>Click on it → Preview/Response tab</li>
-            <li>Right-click → Copy Response (or use the button below to parse it)</li>
-        </ol>
-        <input type="text" id="videoId3" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="loadInIframe()">Load in Iframe (Check Network)</button>
-        <button onclick="parseFromClipboard()">Parse from Clipboard</button>
-        <pre id="result3">Load iframe, then copy response from Network tab...</pre>
-    </div>
-
-    <div class="method">
-        <h2>Method 4: Bookmarklet (Run in Vimeo Tab)</h2>
-        <p style="color: #9cdcfe;">
-            Open the Vimeo player in a new tab, then run this bookmarklet:
-        </p>
-        <textarea readonly style="width: 100%; height: 100px; background: #1e1e1e; color: #ce9178; border: 1px solid #3e3e42; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 11px;">javascript:(function(){if(window.playerConfig){const json=JSON.stringify(window.playerConfig,null,2);navigator.clipboard.writeText(json);alert('✓ Config copied to clipboard!\n\nPaste it anywhere to save.');console.log('PlayerConfig:',json);}else{alert('No playerConfig found. Make sure you are on a Vimeo player page.');}})();</textarea>
-        <button onclick="copyBookmarklet()">Copy Bookmarklet</button>
-        <p style="color: #9cdcfe; font-size: 14px;">
-            <strong>How to use:</strong><br>
-            1. Copy the code above<br>
-            2. Create a new bookmark<br>
-            3. Paste the code as the URL<br>
-            4. Open <a href="https://player.vimeo.com/video/935884964" target="_blank" style="color: #4fc3f7;">player.vimeo.com/video/935884964</a> in a new tab<br>
-            5. Click the bookmarklet → Config copied to clipboard!
-        </p>
     </div>
 
     <script>
@@ -255,83 +139,12 @@
             }
         }
 
-        async function directFetchWithCookies() {
+        async function extractConfig() {
             const videoId = document.getElementById('videoId1').value;
             const resultDiv = document.getElementById('result1');
             
             try {
-                resultDiv.textContent = 'Sending authenticated request...\n\nYour browser is sending cookies with this request!';
-                
-                const url = `https://player.vimeo.com/video/${videoId}`;
-                
-                // This sends cookies!
-                const response = await fetch(url, {
-                    method: 'GET',
-                    credentials: 'include', // ← This sends your cookies!
-                    mode: 'cors' // Try CORS first
-                }).catch(async (corsError) => {
-                    // If CORS fails, try no-cors (won't be able to read response)
-                    return await fetch(url, {
-                        method: 'GET',
-                        credentials: 'include',
-                        mode: 'no-cors'
-                    });
-                });
-                
-                // If we got here with mode: 'cors', try to read response
-                try {
-                    const html = await response.text();
-                    
-                    // Parse HTML
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(html, 'text/html');
-                    const scripts = doc.querySelectorAll('script');
-                    
-                    let config = null;
-                    
-                    for (let script of scripts) {
-                        const scriptContent = script.textContent || script.innerText;
-                        
-                        if (scriptContent.includes('window.playerConfig')) {
-                            console.log('Found script with playerConfig, extracting...');
-                            config = extractPlayerConfig(scriptContent);
-                            if (config) break;
-                        }
-                    }
-                    
-                    if (config) {
-                        resultDiv.innerHTML = '<span class="success">✓ Config extracted successfully WITH authentication!</span>\n\n' + 
-                                             JSON.stringify(config, null, 2);
-                    } else {
-                        resultDiv.textContent = 'Could not extract playerConfig from response';
-                    }
-                } catch (readError) {
-                    // Can't read response due to CORS
-                    resultDiv.innerHTML = `<span class="success">✓ Request sent with your cookies!</span>\n\n` +
-                        `However, CORS blocks reading the response in JavaScript.\n\n` +
-                        `<strong>TO SEE THE AUTHENTICATED RESPONSE:</strong>\n` +
-                        `1. Open DevTools (F12)\n` +
-                        `2. Go to Network tab\n` +
-                        `3. Find the request to: ${url}\n` +
-                        `4. Click on it to see:\n` +
-                        `   - Request Headers (with your cookies 🍪)\n` +
-                        `   - Response (with authenticated playerConfig)\n` +
-                        `5. Right-click → Copy → Copy Response\n` +
-                        `6. Use "Method 3" and click "Parse from Clipboard" to extract config`;
-                }
-                
-            } catch (error) {
-                resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>\n\n` +
-                    `The request was still sent with cookies - check DevTools Network tab!`;
-            }
-        }
-
-        async function corsProxyMethod() {
-            const videoId = document.getElementById('videoId2').value;
-            const resultDiv = document.getElementById('result2');
-            
-            try {
-                resultDiv.textContent = 'Fetching via proxy (without cookies)...';
+                resultDiv.textContent = 'Fetching...';
                 
                 const proxyUrl = 'https://api.allorigins.win/raw?url=';
                 const targetUrl = encodeURIComponent(`https://player.vimeo.com/video/${videoId}`);
@@ -339,7 +152,7 @@
                 const response = await fetch(proxyUrl + targetUrl);
                 const html = await response.text();
                 
-                // Parse HTML
+                // Parse HTML and find script with playerConfig
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
                 const scripts = doc.querySelectorAll('script');
@@ -357,8 +170,7 @@
                 }
                 
                 if (config) {
-                    resultDiv.innerHTML = '<span class="error">⚠ Config extracted (UNAUTHENTICATED)</span>\n\n' + 
-                                         'Note: This request did NOT include your cookies, so you may be missing private data.\n\n' +
+                    resultDiv.innerHTML = '<span class="success">✓ Config extracted successfully!</span>\n\n' + 
                                          JSON.stringify(config, null, 2);
                 } else {
                     resultDiv.textContent = 'Could not extract playerConfig';
@@ -366,79 +178,6 @@
             } catch (error) {
                 resultDiv.textContent = `Error: ${error.message}\n${error.stack}`;
             }
-        }
-
-        function loadInIframe() {
-            const videoId = document.getElementById('videoId3').value;
-            const resultDiv = document.getElementById('result3');
-            const iframe = document.getElementById('vimeoPlayer');
-            
-            const url = `https://player.vimeo.com/video/${videoId}?background=1`;
-            iframe.src = url;
-            
-            resultDiv.innerHTML = `<span class="success">✓ Loading authenticated iframe...</span>\n\n` +
-                `The iframe is loading with your authentication!\n\n` +
-                `<strong>NOW DO THIS:</strong>\n` +
-                `1. Open DevTools (F12)\n` +
-                `2. Go to Network tab\n` +
-                `3. Look for request to: ${url}\n` +
-                `4. Click on it\n` +
-                `5. Go to Response tab\n` +
-                `6. Right-click in the response → Select All → Copy\n` +
-                `7. Click "Parse from Clipboard" button above\n\n` +
-                `<strong>OR</strong> just view it in the Preview tab!`;
-        }
-
-        async function parseFromClipboard() {
-            const resultDiv = document.getElementById('result3');
-            
-            try {
-                const html = await navigator.clipboard.readText();
-                
-                if (!html || html.length < 100) {
-                    resultDiv.innerHTML = `<span class="error">✗ Clipboard seems empty or too short</span>\n\n` +
-                        `Make sure you copied the full response from Network tab!`;
-                    return;
-                }
-                
-                // Try to find playerConfig
-                const match = html.match(/window\.playerConfig\s*=\s*(\{[\s\S]*?\});/);
-                
-                if (match) {
-                    try {
-                        const config = JSON.parse(match[1]);
-                        resultDiv.innerHTML = '<span class="success">✓ Config extracted from clipboard!</span>\n\n' + 
-                                             JSON.stringify(config, null, 2);
-                    } catch (parseError) {
-                        // Try the more robust parser
-                        const config = extractPlayerConfig(html);
-                        if (config) {
-                            resultDiv.innerHTML = '<span class="success">✓ Config extracted from clipboard!</span>\n\n' + 
-                                                 JSON.stringify(config, null, 2);
-                        } else {
-                            resultDiv.innerHTML = `<span class="error">✗ Could not parse config</span>\n\n` +
-                                `Found playerConfig in HTML but parsing failed.\n` +
-                                `Error: ${parseError.message}`;
-                        }
-                    }
-                } else {
-                    resultDiv.innerHTML = `<span class="error">✗ No playerConfig found in clipboard</span>\n\n` +
-                        `Make sure you copied the full HTML response from the Network tab.\n` +
-                        `It should contain "window.playerConfig = ..."`;
-                }
-                
-            } catch (error) {
-                resultDiv.innerHTML = `<span class="error">✗ Error reading clipboard</span>\n\n` +
-                    `Error: ${error.message}\n\n` +
-                    `Make sure you granted clipboard permissions.`;
-            }
-        }
-
-        function copyBookmarklet() {
-            const bookmarklet = document.querySelector('textarea').value;
-            navigator.clipboard.writeText(bookmarklet).then(() => {
-                alert('✓ Bookmarklet copied!\n\n1. Create a new bookmark\n2. Paste as the URL\n3. Open a Vimeo player page\n4. Click the bookmarklet');
-            });
         }
     </script>
 </body>
