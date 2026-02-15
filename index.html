@@ -164,6 +164,11 @@
             color: #721c24;
         }
         
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
         .clear-btn {
             background: #6c757d !important;
             float: right;
@@ -172,6 +177,19 @@
         .clear-btn:hover {
             background: #545b62 !important;
         }
+
+        .note {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .note strong {
+            color: #1976D2;
+        }
     </style>
 </head>
 <body>
@@ -179,9 +197,13 @@
         <h1>🔍 Request/Response Interceptor</h1>
         
         <div id="status"></div>
+
+        <div class="note">
+            <strong>⚠️ Important:</strong> Make sure both <code>proxy-page.html</code> AND <code>sw-proxy.js</code> are uploaded to the same directory on your server/GitHub Pages!
+        </div>
         
         <div class="controls">
-            <input type="text" id="urlInput" placeholder="Enter URL to load in iframe (e.g., https://example.com)" value=https://player.vimeo.com/video/935884964?background=1">
+            <input type="text" id="urlInput" placeholder="Enter URL to load in iframe (e.g., https://example.com)" value="https://player.vimeo.com/video/935884964?background=1">
             <button onclick="loadUrl()">Load URL</button>
             <button class="clear-btn" onclick="clearLog()">Clear Log</button>
         </div>
@@ -190,14 +212,14 @@
             <div class="panel">
                 <div class="panel-header">📄 Iframe Content</div>
                 <div class="iframe-container">
-                    <iframe id="targetFrame" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+                    <iframe id="targetFrame" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
                 </div>
             </div>
             
             <div class="panel">
                 <div class="panel-header">📊 Intercepted Requests & Responses</div>
                 <div class="log-container" id="logContainer">
-                    <p style="color: #6c757d;">Waiting for requests...</p>
+                    <p style="color: #6c757d;">Waiting for Service Worker to register...</p>
                 </div>
             </div>
         </div>
@@ -205,12 +227,26 @@
     
     <script>
         let logEntries = [];
+        let serviceWorkerReady = false;
         
         // Register Service Worker
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw-proxy.js')
+            // Get the path to the service worker relative to the current page
+            const swPath = new URL('sw-proxy.js', window.location.href).href;
+            
+            console.log('Attempting to register Service Worker at:', swPath);
+            
+            navigator.serviceWorker.register('sw-proxy.js', { 
+                scope: './' 
+            })
                 .then(registration => {
                     console.log('Service Worker registered:', registration);
+                    
+                    // Wait for the service worker to be ready
+                    return navigator.serviceWorker.ready;
+                })
+                .then(registration => {
+                    serviceWorkerReady = true;
                     showStatus('✅ Service Worker registered successfully! Ready to intercept requests.', false);
                     
                     // Listen for messages from service worker
@@ -219,10 +255,44 @@
                             logRequest(event.data);
                         }
                     });
+                    
+                    // Auto-load default URL
+                    setTimeout(() => {
+                        loadUrl();
+                    }, 500);
                 })
                 .catch(error => {
                     console.error('Service Worker registration failed:', error);
-                    showStatus('❌ Service Worker registration failed. The page must be served over HTTPS or localhost.', true);
+                    let errorMsg = '❌ Service Worker registration failed. ';
+                    
+                    if (error.message.includes('404')) {
+                        errorMsg += 'The sw-proxy.js file was not found. Make sure it\'s in the same directory as this HTML file!';
+                    } else if (window.location.protocol === 'file:') {
+                        errorMsg += 'Service Workers don\'t work with file:// protocol. Please use a web server (http:// or https://).';
+                    } else if (window.location.protocol === 'http:' && window.location.hostname !== 'localhost') {
+                        errorMsg += 'Service Workers require HTTPS (except on localhost).';
+                    } else {
+                        errorMsg += error.message;
+                    }
+                    
+                    showStatus(errorMsg, true);
+                    
+                    // Show instructions in log
+                    document.getElementById('logContainer').innerHTML = `
+                        <div style="padding: 20px; background: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107;">
+                            <h3 style="margin-top: 0; color: #856404;">⚠️ Setup Required</h3>
+                            <p style="color: #856404;"><strong>The Service Worker file (sw-proxy.js) could not be loaded.</strong></p>
+                            <p style="color: #856404;">To fix this:</p>
+                            <ol style="color: #856404;">
+                                <li>Make sure <strong>sw-proxy.js</strong> is uploaded to your server</li>
+                                <li>It must be in the <strong>same directory</strong> as this HTML file</li>
+                                <li>Both files must be served over <strong>HTTPS</strong> (or localhost)</li>
+                                <li>Check your browser's DevTools Console for more details</li>
+                            </ol>
+                            <p style="color: #856404; margin-bottom: 0;">Current URL: <code>${window.location.href}</code></p>
+                            <p style="color: #856404; margin-bottom: 0;">Expected SW URL: <code>${swPath}</code></p>
+                        </div>
+                    `;
                 });
         } else {
             showStatus('❌ Service Workers not supported in this browser.', true);
@@ -235,6 +305,11 @@
         }
         
         function loadUrl() {
+            if (!serviceWorkerReady) {
+                showStatus('⚠️ Please wait for Service Worker to be ready before loading URLs.', 'warning');
+                return;
+            }
+            
             const url = document.getElementById('urlInput').value;
             const iframe = document.getElementById('targetFrame');
             
@@ -245,6 +320,10 @@
             
             // Add https:// if not present
             const fullUrl = url.match(/^https?:\/\//) ? url : 'https://' + url;
+            
+            // Clear previous logs
+            logEntries = [];
+            renderLog();
             
             iframe.src = fullUrl;
             logMessage(`Loading: ${fullUrl}`);
@@ -262,7 +341,7 @@
             };
             
             logEntries.unshift(entry);
-            if (logEntries.length > 50) logEntries.pop(); // Keep last 50 entries
+            if (logEntries.length > 100) logEntries.pop(); // Keep last 100 entries
             
             renderLog();
         }
@@ -275,7 +354,7 @@
             const container = document.getElementById('logContainer');
             
             if (logEntries.length === 0) {
-                container.innerHTML = '<p style="color: #6c757d;">Waiting for requests...</p>';
+                container.innerHTML = '<p style="color: #6c757d;">Waiting for requests... Load a URL to see intercepted traffic.</p>';
                 return;
             }
             
@@ -305,11 +384,6 @@
             logEntries = [];
             renderLog();
         }
-        
-        // Load default URL on page load (after a short delay to ensure SW is ready)
-        setTimeout(() => {
-            loadUrl();
-        }, 1000);
     </script>
 </body>
 </html>
