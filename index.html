@@ -1,234 +1,89 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vimeo Config Extractor</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 50px auto;
-            padding: 20px;
-        }
-        input, button {
-            padding: 10px;
-            margin: 10px 0;
-            font-size: 16px;
-        }
-        input {
-            width: 300px;
-        }
-        button {
-            cursor: pointer;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-        }
-        button:hover {
-            background: #0056b3;
-        }
-        pre {
-            background: #f4f4f4;
-            padding: 15px;
-            border-radius: 4px;
-            overflow-x: auto;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        .method {
-            margin: 30px 0;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .iframe-container {
-            margin: 20px 0;
-            padding: 20px;
-            border: 2px solid #007bff;
-            border-radius: 4px;
-        }
-        .success {
-            color: green;
-            font-weight: bold;
-        }
-        .error {
-            color: red;
-            font-weight: bold;
-        }
-    </style>
+  <title>PostMessage Tester</title>
+  <style>
+    body { font-family: monospace; font-size: 13px; padding: 1rem; background: #0f0f0f; color: #e0e0e0; }
+    input, textarea { background: #1a1a1a; color: #e0e0e0; border: 1px solid #333; padding: 6px 8px; width: 100%; box-sizing: border-box; font-family: monospace; font-size: 12px; }
+    textarea { height: 80px; resize: vertical; }
+    button { background: #1a1a1a; color: #e0e0e0; border: 1px solid #444; padding: 6px 14px; cursor: pointer; font-family: monospace; }
+    button:hover { background: #252525; }
+    label { font-size: 11px; color: #888; display: block; margin: 10px 0 4px; }
+    #log { background: #1a1a1a; border: 1px solid #333; padding: 10px; height: 200px; overflow-y: auto; margin-top: 8px; font-size: 11px; }
+    .rx { color: #4ec9b0; } .tx { color: #569cd6; } .err { color: #f44747; }
+    iframe { width: 100%; height: 500px; border: 1px solid #333; margin-top: 12px; display: block; }
+  </style>
 </head>
 <body>
-    <h1>Vimeo Config Extractor</h1>
 
-    <div class="iframe-container">
-        <h2>Testing Vimeo Player Authentication</h2>
-        <iframe id="vimeoPlayer" 
-                src="https://player.vimeo.com/video/935884964?background=1" 
-                width="640" 
-                height="360" 
-                frameborder="0">
-        </iframe>
-    </div>
+  <label>iframe src</label>
+  <div style="display:flex;gap:8px;">
+    <input id="iframeSrc" value="https://target.com/page" />
+    <button onclick="loadFrame()">load</button>
+  </div>
 
-    <div class="method">
-        <h2>Extract PlayerConfig</h2>
-        <input type="text" id="videoId1" placeholder="Enter Vimeo Video ID" value="935884964">
-        <button onclick="extractConfig()">Extract Config</button>
-        <pre id="result1">Results will appear here...</pre>
-    </div>
+  <label>target origin (for sending)</label>
+  <input id="targetOrigin" value="https://target.com" />
 
-    <script>
-        function extractPlayerConfig(scriptContent) {
-            // Find where window.playerConfig starts
-            const startMatch = scriptContent.match(/window\.playerConfig\s*=\s*/);
-            if (!startMatch) {
-                console.log('No window.playerConfig found');
-                return null;
-            }
-            
-            const startIndex = startMatch.index + startMatch[0].length;
-            let content = scriptContent.substring(startIndex);
-            
-            // Find the matching closing brace
-            let braceCount = 0;
-            let inString = false;
-            let stringChar = null;
-            let escaped = false;
-            let endIndex = -1;
-            
-            for (let i = 0; i < content.length; i++) {
-                const char = content[i];
-                
-                if (escaped) {
-                    escaped = false;
-                    continue;
-                }
-                
-                if (char === '\\') {
-                    escaped = true;
-                    continue;
-                }
-                
-                if ((char === '"' || char === "'") && !inString) {
-                    inString = true;
-                    stringChar = char;
-                    continue;
-                }
-                
-                if (char === stringChar && inString) {
-                    inString = false;
-                    stringChar = null;
-                    continue;
-                }
-                
-                if (inString) continue;
-                
-                if (char === '{') {
-                    braceCount++;
-                } else if (char === '}') {
-                    braceCount--;
-                    if (braceCount === 0) {
-                        endIndex = i + 1;
-                        break;
-                    }
-                }
-            }
-            
-            if (endIndex === -1) {
-                console.log('Could not find closing brace');
-                return null;
-            }
-            
-            const configStr = content.substring(0, endIndex);
-            
-            try {
-                const parsed = JSON.parse(configStr);
-                console.log('Successfully parsed config');
-                return parsed;
-            } catch (e) {
-                console.error('Parse error:', e);
-                console.error('Config string preview:', configStr.substring(0, 200));
-                return { error: 'Failed to parse', preview: configStr.substring(0, 500) };
-            }
-        }
+  <label>payload</label>
+  <textarea id="payload">{"type":"test","msg":"hello"}</textarea>
 
-        async function extractConfig() {
-            const videoId = document.getElementById('videoId1').value;
-            const resultDiv = document.getElementById('result1');
-            
-            try {
-                resultDiv.textContent = 'Fetching...';
-                console.log('Fetching video:', videoId);
-                
-                // Try multiple CORS proxies in case one fails
-                const proxies = [
-                    'https://api.allorigins.win/raw?url=',
-                    'https://corsproxy.io/?',
-                    'https://api.codetabs.com/v1/proxy?quest='
-                ];
-                
-                const targetUrl = `https://player.vimeo.com/video/${videoId}`;
-                let html = null;
-                let lastError = null;
-                
-                // Try each proxy until one works
-                for (let proxyUrl of proxies) {
-                    try {
-                        console.log('Trying proxy:', proxyUrl);
-                        const encodedUrl = encodeURIComponent(targetUrl);
-                        const response = await fetch(proxyUrl + encodedUrl);
-                        
-                        if (response.ok) {
-                            html = await response.text();
-                            console.log('Got response, length:', html.length);
-                            break;
-                        }
-                    } catch (e) {
-                        console.log('Proxy failed:', proxyUrl, e.message);
-                        lastError = e;
-                    }
-                }
-                
-                if (!html) {
-                    throw new Error('All proxies failed. Last error: ' + (lastError ? lastError.message : 'Unknown'));
-                }
-                
-                // Parse HTML and find script with playerConfig
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const scripts = doc.querySelectorAll('script');
-                
-                console.log('Found', scripts.length, 'script tags');
-                
-                let config = null;
-                
-                for (let script of scripts) {
-                    const scriptContent = script.textContent || script.innerText;
-                    
-                    if (scriptContent.includes('window.playerConfig')) {
-                        console.log('Found script with playerConfig, extracting...');
-                        config = extractPlayerConfig(scriptContent);
-                        if (config && !config.error) break;
-                    }
-                }
-                
-                if (config && !config.error) {
-                    resultDiv.innerHTML = '<span class="success">✓ Config extracted successfully!</span>\n\n' + 
-                                         JSON.stringify(config, null, 2);
-                } else if (config && config.error) {
-                    resultDiv.innerHTML = '<span class="error">✗ Parse error</span>\n\n' + 
-                                         'Found playerConfig but could not parse it.\n\n' +
-                                         'Preview:\n' + config.preview;
-                } else {
-                    resultDiv.innerHTML = '<span class="error">✗ Could not find playerConfig</span>\n\n' +
-                                         'The HTML was fetched but window.playerConfig was not found.\n' +
-                                         'HTML preview:\n' + html.substring(0, 500) + '...';
-                }
-            } catch (error) {
-                resultDiv.innerHTML = `<span class="error">✗ Error: ${error.message}</span>\n\n${error.stack}`;
-                console.error('Full error:', error);
-            }
-        }
-    </script>
+  <div style="display:flex;gap:8px;margin-top:8px;">
+    <button onclick="sendToFrame()">send to iframe</button>
+    <button onclick="sendToSelf()">send to self (window)</button>
+    <button onclick="clearLog()">clear log</button>
+  </div>
+
+  <label>event log</label>
+  <div id="log">waiting for messages...</div>
+
+  <iframe id="targetFrame" src="about:blank"></iframe>
+
+<script>
+  window.addEventListener('message', function(e) {
+    log('rx', `[RX] origin: ${e.origin || 'null'} | source: ${e.source === window ? 'self' : 'iframe/opener'}\n     data: ${JSON.stringify(e.data)}`);
+  });
+
+  function getPayload() {
+    const raw = document.getElementById('payload').value.trim();
+    try { return JSON.parse(raw); } catch(_) { return raw; }
+  }
+
+  function sendToFrame() {
+    const origin = document.getElementById('targetOrigin').value.trim() || '*';
+    const frame = document.getElementById('targetFrame').contentWindow;
+    if (!frame) return log('err', '[ERR] iframe not loaded');
+    try {
+      frame.postMessage(getPayload(), origin);
+      log('tx', `[TX] → iframe | origin: ${origin} | data: ${JSON.stringify(getPayload())}`);
+    } catch(e) { log('err', '[ERR] ' + e.message); }
+  }
+
+  function sendToSelf() {
+    try {
+      window.postMessage(getPayload(), '*');
+      log('tx', `[TX] → self | data: ${JSON.stringify(getPayload())}`);
+    } catch(e) { log('err', '[ERR] ' + e.message); }
+  }
+
+  function loadFrame() {
+    document.getElementById('targetFrame').src = document.getElementById('iframeSrc').value.trim();
+  }
+
+  function log(type, msg) {
+    const div = document.createElement('div');
+    div.className = type;
+    div.textContent = new Date().toISOString().split('T')[1].replace('Z','') + ' ' + msg;
+    const el = document.getElementById('log');
+    if (el.textContent === 'waiting for messages...') el.innerHTML = '';
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function clearLog() {
+    document.getElementById('log').innerHTML = 'waiting for messages...';
+  }
+</script>
+
 </body>
 </html>
