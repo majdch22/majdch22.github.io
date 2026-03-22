@@ -1,8 +1,9 @@
   {
     "name": "Test Pay",
-    "icons": [{"src": "icon.png", "sizes": "32x32", "type": "image/png"}],
+    "icons": [{"src": "https://majdch22.github.io/icon.png", "sizes": "32x32",
+   "type": "image/png"}],
     "serviceworker": {
-      "src": "sw.js",
+      "src": "https://majdch22.github.io/sw.js",
       "scope": "/"
     }
   }
