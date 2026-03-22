@@ -3,7 +3,7 @@
     e.waitUntil(
       self.registration.paymentManager.instruments.set("basic", {
         name: "Test Pay",
-        method: "https://animated-piroshki-a90b53.netlify.app/pay.json"
+        method: "https://gleeful-creponne-8ff162.netlify.app/pay.json"
       })
     );
   });
