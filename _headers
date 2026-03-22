@@ -1,4 +1,4 @@
-  /pay
+  /pay.json
     Link: </app.json>; rel="payment-method-manifest"
     Access-Control-Allow-Origin: *
     Content-Type: application/json
