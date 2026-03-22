@@ -1,4 +1,4 @@
-  {
-    "default_applications": ["https://majdch22.github.io/app.json"],
-    "supported_origins": ["https://majdch22.github.io"]
+{
+    "default_applications": ["https://animated-piroshki-a90b53.netlify.app/app.json"],
+    "supported_origins": "*"
   }
