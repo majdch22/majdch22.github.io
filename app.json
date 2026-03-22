@@ -1,0 +1,8 @@
+  {
+    "name": "Test Pay",
+    "icons": [{"src": "icon.png", "sizes": "32x32", "type": "image/png"}],
+    "serviceworker": {
+      "src": "sw.js",
+      "scope": "/"
+    }
+  }
