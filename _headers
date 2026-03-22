@@ -2,3 +2,11 @@
     Link: </app.json>; rel="payment-method-manifest"
     Access-Control-Allow-Origin: *
     Content-Type: application/json
+
+  /app.json
+    Access-Control-Allow-Origin: *
+    Content-Type: application/json
+
+  /sw.js
+    Access-Control-Allow-Origin: *
+    Content-Type: application/javascript
