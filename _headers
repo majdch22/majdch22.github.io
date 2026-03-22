@@ -10,3 +10,6 @@
   /sw.js
     Access-Control-Allow-Origin: *
     Content-Type: application/javascript
+
+  /icon.png
+    Access-Control-Allow-Origin: *
