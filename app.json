@@ -1,12 +1,7 @@
   {
     "name": "Test Pay",
-    "display": "standalone",
-    "start_url": "/",
-    "icons": [{
-      "src": "https://animated-piroshki-a90b53.netlify.app/icon.png",
-      "sizes": "32x32",
-      "type": "image/png"
-    }],
+    "icons": [{"src": "https://animated-piroshki-a90b53.netlify.app/icon.png", "sizes": "32x32",
+  "type": "image/png"}],
     "serviceworker": {
       "src": "https://animated-piroshki-a90b53.netlify.app/sw.js",
       "scope": "https://animated-piroshki-a90b53.netlify.app/"
