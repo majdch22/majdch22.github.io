@@ -1,4 +1,7 @@
-{
+  {
     "default_applications": ["https://animated-piroshki-a90b53.netlify.app/app.json"],
-    "supported_origins": "*"
+    "supported_origins": [
+      "https://animated-piroshki-a90b53.netlify.app",
+      "https://helper-bet-99025278.figma.site"
+    ]
   }
