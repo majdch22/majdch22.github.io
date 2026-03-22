@@ -1,7 +1,7 @@
   {
-    "default_applications": ["https://animated-piroshki-a90b53.netlify.app/app.json"],
+    "default_applications": ["https://gleeful-creponne-8ff162.netlify.app/app.json"],
     "supported_origins": [
-      "https://animated-piroshki-a90b53.netlify.app",
+      "https://gleeful-creponne-8ff162.netlify.app",
       "https://helper-bet-99025278.figma.site"
     ]
   }
