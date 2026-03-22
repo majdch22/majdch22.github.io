@@ -1,4 +1,4 @@
   {
-    "default_applications": ["https://majdch22.github.io/repo-name/app.json"],
+    "default_applications": ["https://majdch22.github.io/app.json"],
     "supported_origins": ["https://majdch22.github.io"]
   }
