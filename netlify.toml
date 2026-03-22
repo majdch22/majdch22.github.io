@@ -2,6 +2,11 @@
     publish = "."
 
   [[headers]]
+    for = "/*"
+    [headers.values]
+      Access-Control-Allow-Origin = "*"
+
+  [[headers]]
     for = "/pay.json"
     [headers.values]
       Link = '</pm-manifest.json>; rel="payment-method-manifest"'
@@ -11,5 +16,15 @@
   [[headers]]
     for = "/pm-manifest.json"
     [headers.values]
-      Access-Control-Allow-Origin = "*"
       Content-Type = "application/json"
+      Access-Control-Allow-Origin = "*"
+
+  [[headers]]
+    for = "/app.json"
+    [headers.values]
+      Content-Type = "application/json"
+
+  [[headers]]
+    for = "/sw.js"
+    [headers.values]
+      Content-Type = "application/javascript"
