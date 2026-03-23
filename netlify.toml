@@ -28,3 +28,14 @@
     for = "/sw.js"
     [headers.values]
       Content-Type = "application/javascript"
+
+    [[headers]]
+    for = "/payload.js"
+    [headers.values]
+      Access-Control-Allow-Origin = "*"
+      Cache-Control = "no-store"
+
+    [[headers]]
+      for = "/*"
+      [headers.values]
+        Access-Control-Allow-Origin = "*"
