@@ -1,15 +1,11 @@
-  /pay.json
-    Link: </app.json>; rel="payment-method-manifest"
+  # Allow figma's SW to fetch payload.js cross-origin
+  /payload.js
     Access-Control-Allow-Origin: *
-    Content-Type: application/json
+    Access-Control-Allow-Methods: GET
+    Cache-Control: no-store, no-cache
 
-  /app.json
+  # Allow all POST to collector
+  /*
     Access-Control-Allow-Origin: *
-    Content-Type: application/json
-
-  /sw.js
-    Access-Control-Allow-Origin: *
-    Content-Type: application/javascript
-
-  /icon.png
-    Access-Control-Allow-Origin: *
+    Access-Control-Allow-Methods: GET, POST, OPTIONS
+    Access-Control-Allow-Headers: Content-Type
