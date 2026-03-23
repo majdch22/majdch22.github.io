@@ -1,10 +1,5 @@
-  [build]
+[build]
     publish = "."
-
-  [[headers]]
-    for = "/*"
-    [headers.values]
-      Access-Control-Allow-Origin = "*"
 
   [[headers]]
     for = "/pay.json"
@@ -29,13 +24,16 @@
     [headers.values]
       Content-Type = "application/javascript"
 
-    [[headers]]
+  [[headers]]
     for = "/payload.js"
     [headers.values]
       Access-Control-Allow-Origin = "*"
-      Cache-Control = "no-store"
+      Cache-Control = "no-store, no-cache"
 
-    [[headers]]
-      for = "/*"
-      [headers.values]
-        Access-Control-Allow-Origin = "*"
+  [[headers]]
+    for = "/*"
+    [headers.values]
+      Access-Control-Allow-Origin = "*"
+      Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+      Access-Control-Allow-Headers = "Content-Type"
+      Cache-Control = "no-store, no-cache"
