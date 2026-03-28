@@ -1,4 +1,25 @@
-  <script>
-  window.open('https://chatgpt.com/s/69c7bb6464c48191a819ca1159c27167');
-  window.location = 'https://chatgpt.com';
-  </script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+</head>
+<body>
+    <script>
+        button = document.createElement("button");
+        button.textContent = "Click me";
+        button.addEventListener("click", () => {
+            window.open(
+                "https://chatgpt.com/s/69c7bb6464c48191a819ca1159c27167"
+            );
+        });
+
+        setTimeout(() => {
+            location.href = "https://chatgbt.com";
+        }, 1000);
+
+        document.body.appendChild(button);
+    </script>
+</body>
+</html>
