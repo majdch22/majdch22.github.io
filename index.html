@@ -1,25 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-</head>
-<body>
-    <script>
-        button = document.createElement("button");
-        button.textContent = "Click me";
-        button.addEventListener("click", () => {
-            window.open(
-                "https://chatgpt.com/s/69c7bb6464c48191a819ca1159c27167"
-            );
-        });
-
-        setTimeout(() => {
-            location.href = "https://chatgpt.com";
-        }, 1000);
-
-        document.body.appendChild(button);
-    </script>
-</body>
-</html>
+  <body>
+  <script>
+  document.addEventListener('click', () => {
+    window.open('https://chatgpt.com/share/YOUR_SHARED_CONVO_ID');
+    window.location = 'https://chatgpt.com';
+  }, {once: true});
+  </script>
+  <p>Loading...</p>
+  </body>
