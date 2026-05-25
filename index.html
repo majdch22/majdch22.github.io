@@ -232,6 +232,31 @@ function resetPoc(doLog = true) {
   if (doLog) log('--- RESET ---', 'status');
 }
 
+// ── DOM read probe ────────────────────────────────────────────────────────
+function attemptDomRead(delay) {
+  log(`--- DOM read attempt (after ${delay}ms) ---`, 'write');
+  try {
+    const doc = iframeEl.contentDocument || iframeEl.contentWindow.document;
+    if (!doc) {
+      log('  DOM: contentDocument is null', 'error');
+      return;
+    }
+    const text = doc.body ? doc.body.innerText : null;
+    const html = doc.body ? doc.body.innerHTML : null;
+    if (text && text.trim().length > 0) {
+      log('*** DOM READ SUCCEEDED — cross-origin isolation NOT enforced ***', 'trusted');
+      log('  INNER TEXT: ' + text, 'data');
+      capturedResponses.push({ ts: Date.now(), type: 'DOM_READ', delay, text, html });
+    } else {
+      log('  DOM: body empty or blank at this time', 'error');
+    }
+  } catch (err) {
+    // Expected result — cross-origin block confirms iframe is properly isolated
+    log(`  DOM blocked (expected): ${err.message}`, 'error');
+    capturedResponses.push({ ts: Date.now(), type: 'DOM_BLOCKED', delay, error: err.message });
+  }
+}
+
 // ── Dump all captured responses to a new window ──────────────────────────
 function dumpAll() {
   const win = window.open('', '_blank');
@@ -328,6 +353,15 @@ window.addEventListener('message', e => {
     // Log UPDATE_QUERY_PARAM_CAP args fully — may contain encoded CRM data
     if (payload.name === 'UPDATE_QUERY_PARAM_CAP') {
       log(`  PARAM key=${payload.args?.key} value=${payload.args?.value}`, 'data');
+    }
+
+    // ── SHOW_COMPONENT_CAP: AI has rendered — attempt DOM read ──
+    if (payload.name === 'SHOW_COMPONENT_CAP') {
+      log('SHOW_COMPONENT_CAP fired — scheduling DOM read attempts...', 'trusted');
+      // Try at 3s, 8s, 15s to catch the AI at different stages of generation
+      [3000, 8000, 15000].forEach(delay => {
+        setTimeout(() => attemptDomRead(delay), delay);
+      });
     }
   }
 
