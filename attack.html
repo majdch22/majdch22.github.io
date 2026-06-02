@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Betsson PostMessage Exploit PoC</title>
+    <link rel="stylesheet" href="shared/theme.css">
     <style>
         * {
             margin: 0;
@@ -12,9 +13,6 @@
         }
         
         body {
-            font-family: 'Courier New', monospace;
-            background: #0a0e27;
-            color: #00ff00;
             padding: 20px;
         }
         
@@ -35,30 +33,6 @@
             text-align: center;
             color: #00ff00;
             margin-bottom: 30px;
-        }
-        
-        .panel {
-            background: #1a1f3a;
-            border: 2px solid #00ff00;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .panel h2 {
-            color: #00ff00;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #00ff00;
-            padding-bottom: 10px;
-        }
-        
-        pre {
-            background: #0a0e27;
-            border: 1px solid #00ff00;
-            padding: 15px;
-            overflow-x: auto;
-            border-radius: 4px;
-            margin: 10px 0;
         }
         
         .finding {
@@ -82,15 +56,14 @@
             padding: 15px 30px;
             font-size: 16px;
             font-weight: bold;
-            cursor: pointer;
             border-radius: 4px;
             margin: 5px;
-            font-family: 'Courier New', monospace;
         }
         
         button:hover {
             background: #cc0000;
             box-shadow: 0 0 20px #ff0000;
+            color: #fff;
         }
         
         button.safe {
@@ -104,21 +77,13 @@
         
         input, textarea {
             width: 100%;
-            background: #0a0e27;
-            border: 1px solid #00ff00;
-            color: #00ff00;
-            padding: 10px;
-            font-family: 'Courier New', monospace;
             margin: 5px 0;
         }
         
         #log {
-            background: #0a0e27;
             border: 2px solid #00ff00;
             padding: 15px;
             max-height: 400px;
-            overflow-y: auto;
-            font-size: 12px;
             margin-top: 20px;
         }
         
@@ -152,16 +117,6 @@
             grid-template-columns: 1fr 1fr;
             gap: 20px;
         }
-        
-        .warning {
-            background: #ff0000;
-            color: white;
-            padding: 15px;
-            text-align: center;
-            font-weight: bold;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
     </style>
 </head>
 <body>
@@ -169,7 +124,7 @@
         <h1>BETSSON POSTMESSAGE EXPLOIT PoC</h1>
         <div class="subtitle">Discovered Action: gcfids (Group-IB Fingerprint IDS)</div>
         
-        <div class="warning">
+        <div class="warning-banner">
             FOR AUTHORIZED SECURITY TESTING ONLY
         </div>
         
@@ -258,21 +213,17 @@
         </div>
     </div>
     
+    <script src="shared/logger.js"></script>
     <script>
         var targetFrame = null;
         var attackCount = 0;
         var intercepting = false;
         
-        function log(message, type) {
-            if (!type) type = 'info';
-            var logDiv = document.getElementById('log');
-            var timestamp = new Date().toLocaleTimeString();
-            var entry = document.createElement('div');
-            entry.className = 'log-entry ' + type;
-            entry.textContent = '[' + timestamp + '] ' + message;
-            logDiv.appendChild(entry);
-            logDiv.scrollTop = logDiv.scrollHeight;
-        }
+        var logger = PocLogger.create({
+            timestampFormat: 'locale',
+            entryBaseClass: 'log-entry'
+        });
+        function log(message, type) { logger.log(message, type); }
         
         function loadTarget() {
             var url = document.getElementById('targetUrl').value;

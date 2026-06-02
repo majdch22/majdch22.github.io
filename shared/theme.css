@@ -1,0 +1,103 @@
+/*
+ * Shared terminal PoC theme.
+ *
+ * Consolidates the duplicated dark-background / green-monospace CSS found
+ * across index.html, attack.html, poc2.html, sandbox.html, and collector.html.
+ *
+ * Pages can override specific properties in their own <style> block after
+ * loading this stylesheet.
+ */
+
+/* ── Base ─────────────────────────────────────────────────── */
+body {
+  font-family: 'Courier New', monospace;
+  background: #0a0e27;
+  color: #00ff00;
+  margin: 0;
+  padding: 20px;
+}
+
+/* ── Log panel ────────────────────────────────────────────── */
+#log {
+  background: #0a0e27;
+  border: 1px solid #00ff00;
+  padding: 10px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+button {
+  background: #222;
+  color: #0f0;
+  border: 1px solid #0f0;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+button:hover {
+  background: #0f0;
+  color: #000;
+}
+
+/* ── Form controls ────────────────────────────────────────── */
+input, textarea, select {
+  background: #0a0e27;
+  color: #00ff00;
+  border: 1px solid #00ff00;
+  padding: 6px;
+  font-family: 'Courier New', monospace;
+}
+
+/* ── Log-entry semantic classes ────────────────────────────── */
+.status  { color: #0ff; }
+.trusted { color: #ff0; }
+.data    { color: #f80; white-space: pre-wrap; word-break: break-all; }
+.error   { color: #f00; }
+.write   { color: #f0f; }
+.hit     { color: #f00; font-weight: bold; }
+.evt     { color: #fa7; }
+.warn    { color: #ff0; }
+
+/* ── Common layout helpers ────────────────────────────────── */
+.panel {
+  background: #1a1f3a;
+  border: 2px solid #00ff00;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.panel h2 {
+  color: #00ff00;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #00ff00;
+  padding-bottom: 10px;
+}
+
+.warning-banner {
+  background: #ff0000;
+  color: white;
+  padding: 15px;
+  text-align: center;
+  font-weight: bold;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+pre {
+  background: #0a0e27;
+  border: 1px solid #00ff00;
+  padding: 15px;
+  overflow-x: auto;
+  border-radius: 4px;
+  margin: 10px 0;
+}
+
+code {
+  background: #1a1f3a;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
