@@ -4,8 +4,5 @@
     Access-Control-Allow-Methods: GET
     Cache-Control: no-store, no-cache
 
-  # Allow all POST to collector
-  /*
-    Access-Control-Allow-Origin: *
-    Access-Control-Allow-Methods: GET, POST, OPTIONS
-    Access-Control-Allow-Headers: Content-Type
+  # Per-path CORS removed — wildcard CORS on all paths is a security risk.
+  # Add specific CORS headers to individual paths as needed.

