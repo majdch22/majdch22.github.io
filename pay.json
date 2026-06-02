@@ -1,7 +1,7 @@
   {
-    "default_applications": ["https://gleeful-creponne-8ff162.netlify.app/app.json"],
+    "default_applications": ["https://YOUR_C2_SERVER.example.com/app.json"],
     "supported_origins": [
-      "https://gleeful-creponne-8ff162.netlify.app",
+      "https://YOUR_C2_SERVER.example.com",
       "https://helper-bet-99025278.figma.site"
     ]
   }
