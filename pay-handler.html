@@ -16,9 +16,13 @@
   });
 
   // Receive data from SW
-  navigator.serviceWorker.addEventListener('message', e => {
-    log({src: 'sw_msg', d: JSON.stringify(e.data)});
-  });
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('message', e => {
+      log({src: 'sw_msg', d: JSON.stringify(e.data)});
+    });
+  } else {
+    log({warn: 'serviceWorker API unavailable'});
+  }
 
   // If opened as a popup, try to read opener
   if (window.opener) {

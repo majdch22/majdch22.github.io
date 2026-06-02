@@ -368,6 +368,10 @@ function attemptDomRead(delay) {
 // ── Dump all captured responses to a new window ──────────────────────────
 function dumpAll() {
   const win = window.open('', '_blank');
+  if (!win) {
+    log('ERROR: popup blocked — cannot dump JSON', 'error');
+    return;
+  }
   win.document.write('<pre style="background:#111;color:#0f0;padding:20px;font-size:12px;">'
     + JSON.stringify(capturedResponses, null, 2)
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
