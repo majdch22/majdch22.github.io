@@ -175,12 +175,16 @@ function sendEmail(rpcToken) {
   log('ok', 'To: ' + to);
   log('ok', 'Subject: ' + subject);
 
+  // CORRECT format: {key, params: {url, httpMethod, headers, body}}
   const requests = [
     {
-      relative_url: '/gmail/v1/users/me/messages/send',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw: raw })
+      key: 'gmail-send',
+      params: {
+        url: '/gmail/v1/users/me/messages/send',
+        httpMethod: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw: raw })
+      }
     }
   ];
 

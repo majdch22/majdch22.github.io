@@ -154,7 +154,7 @@ window.addEventListener('message', function(e) {
   Object.entries(responseMap).forEach(([relUrl, wrapper]) => {
     const status = wrapper.data && wrapper.data.status;
     const bodyStr = wrapper.data && wrapper.data.body;
-    log('ok', relUrl.substring(0,50) + ' → HTTP ' + status);
+    log('ok', 'key=' + relUrl + ' → HTTP ' + status);
 
     if (status === 200 && bodyStr) {
       responseHandled = true;
@@ -192,21 +192,27 @@ function sendMakeHttpRequests() {
 
   log('ok', 'Sending makeHttpRequests (s:"makeHttpRequests" f:"..")...');
 
+  // CORRECT format confirmed from ai() source: {key, params:{url, httpMethod, headers, body}}
   const requests = [
     {
-      relative_url: '/drive/v3/files' +
-           '?key=' + DRIVE_KEY +
-           '&fields=files(id,name,mimeType,modifiedTime,size,webViewLink,parents)' +
-           '&pageSize=20&orderBy=modifiedTime+desc',
-      method: 'GET',
-      headers: {},
-      body: null
+      key: 'drive-files',
+      params: {
+        url: '/drive/v3/files?key=' + DRIVE_KEY +
+             '&fields=files(id,name,mimeType,modifiedTime,size,webViewLink,parents)' +
+             '&pageSize=20&orderBy=modifiedTime+desc',
+        httpMethod: 'GET',
+        headers: {},
+        body: null
+      }
     },
     {
-      relative_url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user,storageQuota',
-      method: 'GET',
-      headers: {},
-      body: null
+      key: 'drive-about',
+      params: {
+        url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user,storageQuota',
+        httpMethod: 'GET',
+        headers: {},
+        body: null
+      }
     }
   ];
 

