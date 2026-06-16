@@ -81,7 +81,6 @@ function buildRFC2822(to, subject, body) {
 }
 
 let proxyIframe = null;
-let ackSent = false;
 let requestSent = false;
 
 function init(send) {
@@ -91,7 +90,6 @@ function init(send) {
 
   const rpcToken = 'send' + Math.random().toString(36).substr(2, 12);
   const parentOrigin = location.origin;
-  ackSent = false;
   requestSent = false;
 
   log('ok', 'Init: parent=' + parentOrigin + ' rpcToken=' + rpcToken);
@@ -116,19 +114,16 @@ function init(send) {
     try { msg = JSON.parse(e.data); } catch(err) { return; }
     if (!msg) return;
 
-    // ACK handshake
-    if (!ackSent && msg.s && msg.s.startsWith('ready:') && msg.g === true) {
-      ackSent = true;
-      log('ok', 'Ready signal (g:true). Sending ACK...');
-      proxyIframe.contentWindow.postMessage(JSON.stringify({
-        s: '..', f: msg.s, c: msg.c, a: [], t: rpcToken, l: null, g: false
-      }), 'https://clients6.google.com');
-      if (send) setTimeout(() => sendEmail(rpcToken), 500);
-      else log('ok', 'ACK sent. Call sendEmail() or click button to proceed.');
+    // Ready signal: _.jf.register fires $a() synchronously — D[".."] = rpcToken already set.
+    // No ACK needed. Send immediately.
+    if (msg.s && msg.s.startsWith('ready:') && !requestSent) {
+      log('ok', 'Ready signal received. Sending email request immediately...');
+      if (send) sendEmail(rpcToken);
+      else log('ok', 'Ready. Click "Send Email Now" to proceed.');
       return;
     }
 
-    // Callback
+    // Callback: proxy responds {f:"_callbacks_.callId", a:[null, responses], ...}
     if (!msg.f || !msg.f.includes('_callbacks_')) return;
     log('ok', 'Callback: ' + msg.f);
     const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
@@ -157,9 +152,9 @@ function init(send) {
   window.addEventListener('message', handler);
 
   setTimeout(function() {
-    if (!ackSent) {
-      log('warn', '5s: No ready signal. Trying without ACK...');
-      if (send) sendEmail(rpcToken);
+    if (!requestSent && send) {
+      log('warn', '5s: No ready signal. Sending anyway (token set synchronously)...');
+      sendEmail(rpcToken);
     }
   }, 5000);
 }
@@ -189,8 +184,8 @@ function sendEmail(rpcToken) {
 
   proxyIframe.contentWindow.postMessage(
     JSON.stringify({
-      s: '..',
-      f: 'makeHttpRequests',
+      s: 'makeHttpRequests',
+      f: '..',
       c: 'gmail-send-1',
       a: [requests],
       t: rpcToken,

