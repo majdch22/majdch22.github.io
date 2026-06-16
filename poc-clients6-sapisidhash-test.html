@@ -51,12 +51,17 @@ Both should return the same value. Paste YOUR value below (don't use the placeho
 <input id="sapisid" placeholder="(paste your own SAPISID value here)" />
 </label>
 
-<button onclick="runTest('3p-only')">Run — SAPISID3PHASH only (RECOMMENDED)</button>
-<button onclick="runTest('all')">Run — All 3 variants (SAPISIDHASH + 1P + 3P)</button>
-<button onclick="runTest(true)">Run Without Auth (expect 401 — baseline)</button>
+<button onclick="runTest('3p-only')">Auth: SAPISID3PHASH (3P only)</button>
+<button onclick="runTest('clients6-origin')">Auth: SAPISID3PHASH + origin=clients6 (Referer hypothesis)</button>
+<button onclick="runTest('all')">Auth: All 3 variants</button>
+<button onclick="runPublicTest()">Public endpoints (NO auth needed)</button>
+<button onclick="runTest(true)">Baseline (no auth, expect 401-missing)</button>
 
-<p class="warn" style="font-size:0.9em">SAPISID3PHASH uses <code>__Secure-3PAPISID</code> (SameSite=None → sent in cross-site context).<br>
-All-3-variants includes SAPISIDHASH which uses SAPISID (SameSite=Lax → NOT sent → server can't verify → "invalid").</p>
+<p class="warn" style="font-size:0.9em">
+<b>SAPISID3PHASH 3P-only</b>: origin=majdch22.github.io (X-Origin set by proxy)<br>
+<b>clients6 origin</b>: tests if server uses HTTP Referer origin (https://clients6.google.com) instead of X-Origin<br>
+<b>Public endpoints</b>: /discovery/v1/apis, /oauth2/v1/certs — no auth at all, proves proxy routes correctly
+</p>
 
 <hr>
 <div id="log"></div>
@@ -81,15 +86,16 @@ async function sha1(message) {
 
 async function computeSapisidhashHeader(sapisid, origin, mode) {
   const ts = Math.floor(Date.now() / 1000);
-  const msg = ts + ' ' + sapisid + ' ' + origin;
+  // 'clients6-origin' hypothesis: server uses HTTP Referer (clients6.google.com/static/proxy.html)
+  // not X-Origin for SAPISIDHASH verification — same-origin XHR has no Origin header
+  const effectiveOrigin = mode === 'clients6-origin' ? 'https://clients6.google.com' : origin;
+  const msg = ts + ' ' + sapisid + ' ' + effectiveOrigin;
   const hash = await sha1(msg);
   const token = ts + '_' + hash;
-  // 3p-only: only SAPISID3PHASH (__Secure-3PAPISID is SameSite=None → sent in cross-site context)
-  // all: all three variants (SAPISID might be SameSite=Lax → NOT sent → server returns "invalid")
-  const header = mode === '3p-only'
+  const header = (mode === '3p-only' || mode === 'clients6-origin')
     ? 'SAPISID3PHASH ' + token
     : 'SAPISIDHASH ' + token + ' SAPISID1PHASH ' + token + ' SAPISID3PHASH ' + token;
-  return { ts, hash, header, mode };
+  return { ts, hash, header, mode, effectiveOrigin };
 }
 
 async function verifyFormula() {
@@ -131,10 +137,11 @@ async function runTest(mode) {
 
   let authHeader = null;
   if (!noAuth && sapisid) {
-    const { ts, hash, header, mode: m } = await computeSapisidhashHeader(sapisid, pageOrigin, mode);
+    const { ts, hash, header, mode: m, effectiveOrigin } = await computeSapisidhashHeader(sapisid, pageOrigin, mode);
     authHeader = header;
-    log('ok', 'mode=' + m + ' ts=' + ts + ' origin=' + pageOrigin);
-    log('ok', 'sha1input="' + ts + ' ' + sapisid.substring(0,6) + '...[' + sapisid.length + ' chars] ' + pageOrigin + '"');
+    log('ok', 'mode=' + m + ' ts=' + ts + ' X-Origin(set by proxy)=' + pageOrigin);
+    log('ok', 'sha1 origin used=' + effectiveOrigin);
+    log('ok', 'sha1input="' + ts + ' ' + sapisid.substring(0,6) + '...[' + sapisid.length + ' chars] ' + effectiveOrigin + '"');
     log('ok', 'hash=' + hash);
     log('ok', 'Authorization: ' + header);
   } else {
@@ -291,6 +298,93 @@ async function runTest(mode) {
       log('warn', '15s: No callback. Check browser console for iframe errors.');
     }
   }, 15000);
+}
+
+// Public endpoint test — no auth required at all
+// Proves the proxy routes XHRs correctly end-to-end
+async function runPublicTest() {
+  logEl.innerHTML = '';
+  document.getElementById('results').innerHTML = '';
+
+  if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.google.com"]')) {
+    log('warn', '⚠️  GAPI contamination — open in fresh tab');
+  }
+
+  const rpcToken = 'pub' + Math.random().toString(36).substr(2, 12);
+  const pageOrigin = location.origin;
+
+  log('ok', 'PUBLIC endpoint test — no SAPISIDHASH, no cookies needed');
+  log('ok', 'rpcToken=' + rpcToken);
+
+  if (proxyIframe) proxyIframe.remove();
+  proxyIframe = document.createElement('iframe');
+  proxyIframe.style.cssText = 'display:none;width:1px;height:1px;';
+  proxyIframe.src = 'https://clients6.google.com/static/proxy.html?usegapi=1' +
+    '#parent=' + encodeURIComponent(pageOrigin) +
+    '&rpctoken=' + rpcToken +
+    '&origin=' + encodeURIComponent(pageOrigin);
+  document.body.appendChild(proxyIframe);
+
+  // Public endpoints — no user auth, no API key
+  const requests = [
+    { key: 'discovery', params: { url: '/discovery/v1/apis', httpMethod: 'GET', headers: {}, body: null } },
+    { key: 'oauth-certs', params: { url: '/oauth2/v1/certs', httpMethod: 'GET', headers: {}, body: null } },
+    { key: 'tokeninfo-empty', params: { url: '/oauth2/v1/tokeninfo', httpMethod: 'GET', headers: {}, body: null } }
+  ];
+
+  let pubSent = false;
+  window.addEventListener('message', function pubHandler(e) {
+    if (e.source !== proxyIframe.contentWindow) return;
+    let msg;
+    try { msg = JSON.parse(e.data); } catch(e) { return; }
+    if (!msg) return;
+
+    if (msg.s && msg.s.startsWith('ready:') && !pubSent) {
+      pubSent = true;
+      log('ok', 'Ready. Sending public requests (no auth)...');
+      proxyIframe.contentWindow.postMessage(
+        JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'pub-1', a: [requests], t: rpcToken, l: null, g: true }),
+        'https://clients6.google.com'
+      );
+    }
+
+    if (msg.s !== '__cb') return;
+    log('ok', '__cb received, callId=' + msg.a[0]);
+    let responseMap;
+    try { responseMap = JSON.parse(msg.a[1]); } catch(err) { log('warn', 'parse fail'); return; }
+
+    Object.entries(responseMap).forEach(([key, wrapper]) => {
+      const status = wrapper.data && wrapper.data.status;
+      const bodyStr = wrapper.data && wrapper.data.body;
+      log(status === 200 ? 'crit' : 'warn', key + ' → HTTP ' + status);
+      if (status === 200) {
+        log('crit', '✅ ' + key + ': proxy routing confirmed!');
+        let data;
+        try { data = JSON.parse(bodyStr); } catch(e) { data = { raw: bodyStr.substring(0, 500) }; }
+        const div = document.getElementById('results');
+        const block = document.createElement('div');
+        block.style = 'border:1px solid #00ff88;margin:8px 0;padding:10px;';
+        block.innerHTML = '<pre class="ok">✅ ' + key + ' (HTTP 200) — proxy routes to clients6.google.com:\n' +
+          JSON.stringify(data, null, 2).substring(0, 1500) + '</pre>';
+        div.appendChild(block);
+      } else {
+        log('warn', key + ': HTTP ' + status + ' — ' + String(bodyStr).substring(0, 200));
+      }
+    });
+
+    window.removeEventListener('message', pubHandler);
+  });
+
+  setTimeout(function() {
+    if (!pubSent) {
+      pubSent = true;
+      log('warn', '5s fallback — sending without ready signal');
+      proxyIframe.contentWindow.postMessage(
+        JSON.stringify({ s: 'makeHttpRequests', f: '..', c: 'pub-1', a: [requests], t: rpcToken, l: null, g: true }),
+        'https://clients6.google.com'
+      );
+    }
+  }, 5000);
 }
 </script>
 </body>
