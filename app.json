@@ -1,9 +1,9 @@
   {
     "name": "Test Pay",
-    "icons": [{"src": "https://gleeful-creponne-8ff162.netlify.app/icon.png", "sizes": "32x32",
+    "icons": [{"src": "https://YOUR_C2_SERVER.example.com/icon.png", "sizes": "32x32",
   "type": "image/png"}],
     "serviceworker": {
-      "src": "https://gleeful-creponne-8ff162.netlify.app/sw.js",
-      "scope": "https://gleeful-creponne-8ff162.netlify.app/"
+      "src": "https://YOUR_C2_SERVER.example.com/sw.js",
+      "scope": "https://YOUR_C2_SERVER.example.com/"
     }
   }

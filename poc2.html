@@ -69,7 +69,7 @@
 
   <div class="box">
     <b>Redirect Target (your collaborator URL):</b><br>
-    <input type="text" id="redirectTarget" value="//68cpgjq66fb78xo71jz18vg0jrpid91y.oastify.com/stolen" placeholder="//attacker.com/path">
+    <input type="text" id="redirectTarget" value="//YOUR_COLLABORATOR_ID.oastify.com/stolen" placeholder="//attacker.com/path">
   </div>
 
   <button onclick="testBypass()">Test L0 Bypass Logic</button>
@@ -95,7 +95,10 @@ let targetWindow = null;
 function log(msg, cls = '') {
   const d = document.getElementById('log');
   const ts = new Date().toISOString().slice(11, 23);
-  d.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  const entry = document.createElement('div');
+  if (cls) entry.className = cls;
+  entry.textContent = `[${ts}] ${msg}`;
+  d.appendChild(entry);
   d.scrollTop = d.scrollHeight;
 }
 

