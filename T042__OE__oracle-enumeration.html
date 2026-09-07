@@ -1,0 +1,125 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>T042 - OE Drive access oracle: enumeration + controls</title>
+<style>
+ body{font:13px/1.6 ui-monospace,Consolas,monospace;max-width:80em;margin:1.5em auto;padding:0 1em}
+ textarea{font:inherit;width:100%;height:8em;padding:5px}
+ button{font:inherit;padding:5px 12px;margin:6px 8px 6px 0}
+ pre{white-space:pre-wrap;word-break:break-all;background:#111;color:#ddd;padding:8px;margin:3px 0}
+ table{border-collapse:collapse;margin:10px 0}td,th{border:1px solid #bbb;padding:4px 9px;font-size:12px}
+ .yes{background:#cfc;font-weight:bold}.no{background:#fdd}
+ .hi{background:#ffd;padding:2px}
+</style>
+<h2>T042 - single-gesture enumeration + controls</h2>
+
+<p>T041 showed <code>frames.length</code> 2 = resolvable, 1 = not. This does three things a report
+needs:</p>
+<ol>
+  <li><b>repeats the negative</b> (one sample proves nothing),</li>
+  <li><b>adds controls</b> so we can say precisely what leaks,</li>
+  <li><b>enumerates every id from ONE click</b>, by re-navigating a single popup.</li>
+</ol>
+
+<p class="hi">Own account, own files only (RULES #7).
+One line per case: <code>label,fileId</code>. Suggested set:</p>
+<pre>accessible-office,PUT_YOUR_DOCX_ID_HERE
+accessible-office-again,PUT_THE_SAME_ID_HERE
+nonexistent-1,1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ
+nonexistent-2,1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ
+nonexistent-3,1YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
+native-gdoc,PUT_A_NATIVE_GOOGLE_DOC_ID_HERE</pre>
+
+<textarea id="ids">accessible-office,PUT_YOUR_DOCX_ID_HERE
+accessible-office-again,PUT_THE_SAME_ID_HERE
+nonexistent-1,1ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ
+nonexistent-2,1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ
+nonexistent-3,1YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY</textarea>
+
+<p><button id="run">Run ALL from a single click (one popup, reused)</button>
+   <button id="clr">clear</button></p>
+<div id="out"></div>
+
+<script>
+const EXT = "gbkeegbaiigmenfmjfclcdgdpimamgkj";
+const APP = "chrome-extension://" + EXT + "/views/app.html";
+const SETTLE_MS = 6000, POLL_MS = 100;
+const out = document.getElementById("out");
+
+function log(m, cls) {
+  const p = document.createElement("pre");
+  if (cls) p.className = cls;
+  p.textContent = m; out.appendChild(p); console.log(m);
+}
+
+const stateUrl = id => APP + "?state=" +
+  encodeURIComponent(JSON.stringify({ ids: [id], resourceKeys: {}, userId: 0 }));
+
+// watch a popup we already own until frames.length settles
+function watch(w) {
+  return new Promise(resolve => {
+    const t0 = performance.now();
+    let max = 0, last = null;
+    const timer = setInterval(() => {
+      let len = null;
+      try { len = w.closed ? null : w.frames.length; } catch (e) { len = -1; }
+      if (typeof len === "number" && len > max) max = len;
+      last = len;
+      if (performance.now() - t0 >= SETTLE_MS) {
+        clearInterval(timer);
+        resolve({ max, last });
+      }
+    }, POLL_MS);
+  });
+}
+
+document.getElementById("clr").onclick = () => { out.innerHTML = ""; };
+
+document.getElementById("run").onclick = async () => {
+  const cases = document.getElementById("ids").value.split("\n")
+    .map(l => l.trim()).filter(Boolean)
+    .map(l => { const i = l.indexOf(","); return { label: l.slice(0, i).trim(), id: l.slice(i + 1).trim() }; })
+    .filter(c => c.id && !/PUT_/.test(c.id));
+
+  if (!cases.length) return log("fill in at least one real file id first", "no");
+
+  // ---- the single user gesture: exactly one window.open, reused for every probe ----
+  const w = window.open(stateUrl(cases[0].id), "t042", "width=880,height=680");
+  if (!w) return log("popup BLOCKED - allow popups for this origin and click again", "no");
+  log("ONE popup opened. Every subsequent id is probed by re-navigating it - no further clicks.");
+
+  const rows = [];
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i];
+    if (i > 0) { try { w.location = stateUrl(c.id); } catch (e) { log("nav failed: " + e, "no"); } }
+    const r = await watch(w);
+    rows.push({ label: c.label, id: c.id, max: r.max, last: r.last });
+    log("[" + c.label + "] frames.length max=" + r.max + " final=" + r.last
+        + "  => " + (r.max >= 2 ? "RESOLVABLE" : "not resolvable"));
+  }
+  try { w.close(); } catch (e) {}
+
+  const t = document.createElement("table");
+  t.innerHTML = "<tr><th>label</th><th>file id</th><th>max frames</th><th>verdict</th></tr>";
+  for (const r of rows) {
+    const hit = r.max >= 2;
+    const tr = t.insertRow();
+    tr.className = hit ? "yes" : "no";
+    tr.innerHTML = "<td>" + r.label + "</td><td>" + r.id.slice(0, 16) + "...</td><td>"
+      + r.max + "</td><td>" + (hit ? "RESOLVABLE" : "not resolvable") + "</td>";
+  }
+  out.appendChild(t);
+
+  const pos = rows.filter(r => r.max >= 2).map(r => r.label);
+  const neg = rows.filter(r => r.max < 2).map(r => r.label);
+  log("RESOLVABLE    : " + (pos.join(", ") || "(none)"));
+  log("not resolvable: " + (neg.join(", ") || "(none)"));
+  log("");
+  log("Check these before writing anything up:");
+  log(" 1. every 'nonexistent-*' must read 1. If any reads 2, the signal is noise, not an oracle.");
+  log(" 2. both 'accessible-office' rows must read 2 - it has to be repeatable.");
+  log(" 3. if you supplied 'native-gdoc': 2 means the oracle leaks mere ACCESS; 1 means it leaks");
+  log("    'accessible AND is an Office file'. The report must state whichever is true.");
+};
+
+log("ready. All probes run from ONE click - that is the interaction count for the report.");
+</script>
